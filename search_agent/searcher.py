@@ -178,40 +178,70 @@ class DuckDuckGoSearcher:
             
         except Exception as e:
             print(f"   ✗ DuckDuckGo search failed: {str(e)}")
-            print(f"   ⚠️ Falling back to Wikipedia API...")
-            return self._search_wikipedia(query, max_results)
+            print(f"   ⚠️ Falling back to Bing Search...")
+            return self._search_bing(query, max_results)
             
-    def _search_wikipedia(self, query: str, max_results: int = 5) -> List[SearchResult]:
+    def _search_bing(self, query: str, max_results: int = 5) -> List[SearchResult]:
         import requests
+        from bs4 import BeautifulSoup
+        import urllib.parse
+        import base64
+        import re
+        
         search_results = []
         try:
-            url = "https://en.wikipedia.org/w/api.php"
-            params = {
-                "action": "query",
-                "list": "search",
-                "srsearch": query,
-                "utf8": "",
-                "format": "json"
-            }
             headers = {
-                "User-Agent": "DuckDuckGoSearchAgent/1.0 (https://github.com/example/repo; bot@example.com)"
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9,en-IN;q=0.8'
             }
-            resp = requests.get(url, params=params, headers=headers, timeout=5)
-            data = resp.json()
-            for rank, item in enumerate(data.get("query", {}).get("search", [])[:max_results], 1):
-                page_id = item.get("pageid")
-                title = item.get("title", "")
-                snippet = item.get("snippet", "").replace('<span class="searchmatch">', '').replace('</span>', '')
-                search_results.append(SearchResult(
-                    url=f"https://en.wikipedia.org/?curid={page_id}",
-                    title=title,
-                    snippet=snippet,
-                    source="wikipedia",
-                    rank=rank
-                ))
+            url = f'https://www.bing.com/search?q={urllib.parse.quote(query)}&setmkt=en-IN&setlang=en'
+            resp = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for rank, li in enumerate(soup.find_all('li', class_='b_algo'), 1):
+                title_tag = li.find('h2')
+                if not title_tag: continue
+                a_tag = title_tag.find('a')
+                if not a_tag: continue
+                link = a_tag.get('href', '')
+                title = a_tag.text
+                
+                # Try to decode Bing redirect URL
+                if 'bing.com/ck' in link:
+                    match = re.search(r'u=a1([^&]+)', link)
+                    if match:
+                        try:
+                            # Add padding if needed
+                            b64_str = match.group(1)
+                            b64_str += '=' * (-len(b64_str) % 4)
+                            decoded = base64.b64decode(b64_str).decode('utf-8', errors='ignore')
+                            if decoded.startswith('http'):
+                                link = decoded
+                        except:
+                            pass
+                
+                snippet_tag = li.find('div', class_='b_caption') or li.find('p')
+                snippet = snippet_tag.text if snippet_tag else ''
+                
+                # Filter out Chinese websites
+                bad_domains = ['.cn/', '.cn', 'zh.wikipedia.org', 'baidu.com', 'weibo.com']
+                if any(bad in link.lower() for bad in bad_domains):
+                    continue
+                
+                if link and title:
+                    search_results.append(SearchResult(
+                        url=link,
+                        title=title,
+                        snippet=snippet,
+                        source="bing",
+                        rank=rank
+                    ))
+                    if len(search_results) >= max_results:
+                        break
         except Exception as ex:
-            print(f"   ✗ Wikipedia fallback failed: {ex}")
+            print(f"   ✗ Bing fallback failed: {ex}")
         return search_results
+
     
     def search_news(self, query: str, max_results: int = 5) -> List[SearchResult]:
         """Search news specifically"""
