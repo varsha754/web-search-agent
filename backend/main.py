@@ -4,6 +4,7 @@ FastAPI web interface for the search agent
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
 import threading
@@ -13,10 +14,19 @@ from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 
-from main import DuckDuckGoSearchAgent
-from config import config
+from agents.UI_dashboard.main import DuckDuckGoSearchAgent
+from core.config import config
 
 app = FastAPI(title="DuckDuckGo Search Agent", version="1.0.0")
+
+# Allow the Next.js frontend to communicate with this backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 agent = DuckDuckGoSearchAgent()
 
 

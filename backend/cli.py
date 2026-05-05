@@ -14,9 +14,9 @@ from typing import Dict
 sys.path.insert(0, '.')
 
 from search_agent.searcher import DuckDuckGoSearcher, EnhancedSearcher
-from search_agent.analyzer import EnhancedAnalyzer
+from agents.UI_dashboard.prompts import EnhancedAnalyzer
 from search_agent.source_discovery import SourceDiscovery
-from config import config
+from core.config import config
 
 
 class DirectSearchAgent:
@@ -815,7 +815,7 @@ EXAMPLES:
                     if len(parts) == 2:
                         url, query = parts
                         print(f"\n⏳ Extracting from {url}...")
-                        from main import DuckDuckGoSearchAgent
+                        from agents.UI_dashboard.main import DuckDuckGoSearchAgent
                         agent = DuckDuckGoSearchAgent()
                         result = agent.extract_from_url(url, query)
                         

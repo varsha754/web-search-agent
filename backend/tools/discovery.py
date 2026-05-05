@@ -13,8 +13,8 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
-from config import config
-from search_agent.searcher import DuckDuckGoSearcher, SearchResult
+from core.config import config
+from tools.search import DuckDuckGoSearcher, SearchResult
 
 
 STOP_WORDS = {
@@ -86,9 +86,66 @@ class QueryUnderstanding:
     positive_terms: List[str]
     avoid_terms: List[str]
     used_llm: bool = False
+    is_real_estate: bool = False
 
     def to_dict(self) -> Dict:
         return asdict(self)
+
+
+class RealEstateIntentDetector:
+    """Detect real estate specific intents"""
+    
+    REAL_ESTATE_KEYWORDS = {
+        'project_type': [
+            'residential project', 'commercial project', 'housing project',
+            'apartment complex', 'villa project', 'township', 'plot layout'
+        ],
+        'status': [
+            'new launch', 'upcoming', 'under construction', 'ready to move',
+            'pre-launch', 'completed', 'ongoing', 'announced'
+        ],
+        'features': [
+            '2bhk', '3bhk', '4bhk', 'configurations', 'floor plan',
+            'carpet area', 'super built-up area', 'possession date',
+            'rera registered', 'approved project', 'circle rate', 'ready reckoner',
+            'guideline value', 'market value', 'property valuation'
+        ],
+        'location': [
+            'pune', 'mumbai', 'bangalore', 'hyderabad', 'chennai',
+            'wakad', 'baner', 'hinjewadi', 'kharadi', 'aundh', 'kothrud'
+        ]
+    }
+    
+    REAL_ESTATE_DOMAINS = [
+        'magicbricks.com', '99acres.com', 'housing.com', 'squareyards.com',
+        'commonfloor.com', 'propstory.com', 'nobroker.in', 'era.ind.in',
+        'maharera.mahaonline.gov.in', 'mhada.gov.in', 'pmaymis.gov.in', 'igrmaharashtra.gov.in'
+    ]
+    
+    BLOCKED_DOMAINS = [
+        'tripadvisor.com', 'travelocity.com', 'makemytrip.com', 'goibibo.com',
+        'yatra.com', 'cleartrip.com', 'lonelyplanet.com'
+    ]
+    
+    def is_real_estate_query(self, query: str) -> bool:
+        """Check if query is real estate related"""
+        query_lower = query.lower()
+        for keywords in self.REAL_ESTATE_KEYWORDS.values():
+            if any(kw in query_lower for kw in keywords):
+                return True
+        has_location = any(loc in query_lower for loc in self.REAL_ESTATE_KEYWORDS['location'])
+        has_project = any(term in query_lower for term in ['project', 'flat', 'apartment', 'villa', 'property', 'real estate'])
+        return has_location and has_project
+    
+    def is_tourism_query(self, text: str) -> bool:
+        """Check if query or content is tourism-related"""
+        tourism_keywords = [
+            'things to do', 'tourist attraction', 'places to visit', 'shopping',
+            'restaurant', 'cafe', 'hotel', 'resort', 'travel guide', 'weekend getaway',
+            'heritage walk', 'food tour', 'sightseeing', 'monument', 'temple', 'museum'
+        ]
+        text_lower = text.lower()
+        return any(kw in text_lower for kw in tourism_keywords) and 'project' not in text_lower
 
 
 class SourceDiscovery:
@@ -135,24 +192,58 @@ class SourceDiscovery:
     def discover(self, query: str, max_results: int = 5) -> Dict:
         self._reset_token_usage()
         understanding = self.understand_query(query)
+        detector = RealEstateIntentDetector()
+        understanding.is_real_estate = detector.is_real_estate_query(query)
+        
+        # If real estate, add specialized project queries
+        if understanding.is_real_estate:
+            project_queries = self.generate_project_search_queries(query)
+            understanding.rewritten_queries = self._dedupe_queries(project_queries + understanding.rewritten_queries)
+
         candidates = []
         seen_urls = set()
 
-        # Search multiple variants so broad or vague questions still discover good sources.
+        # Search multiple variants
         for search_query in understanding.rewritten_queries[:4]:
             results = self.searcher.search(search_query, max_results=max(max_results * 2, 8))
             for result in results:
                 if not result.url or result.url in seen_urls:
                     continue
                 seen_urls.add(result.url)
-                candidates.append(self._rank_result(result, understanding, search_query))
+                
+                # Apply real estate specific source validation
+                if understanding.is_real_estate:
+                    if not self.is_valid_real_estate_source(result.url, result.title, result.snippet):
+                        continue
+
+                # Rank result and add trust scoring
+                ranked_item = self._rank_result(result, understanding, search_query)
+                ranked_item['trust_score'] = self._calculate_source_trust(result.url)
+                ranked_item['verification_status'] = self._check_verification(ranked_item)
+                candidates.append(ranked_item)
+
+        # Fallback: if zero results after strict filtering, try once more with relaxed filtering
+        if not candidates and understanding.is_real_estate:
+            print("   ⚠️ No valid real estate sources found. Relaxing filters...")
+            for search_query in understanding.rewritten_queries[:2]:
+                results = self.searcher.search(search_query, max_results=3)
+                for result in results:
+                    if not result.url or result.url in seen_urls: continue
+                    seen_urls.add(result.url)
+                    ranked_item = self._rank_result(result, understanding, search_query)
+                    ranked_item['trust_score'] = self._calculate_source_trust(result.url) * 0.5 # Lower trust for relaxed
+                    candidates.append(ranked_item)
+
+        # Apply Domain Filtering and Boosting
+        candidates = self.filter_relevant_sources(candidates, query)
 
         if self.client and candidates:
             candidates = self._rerank_with_llm(query, understanding, candidates)
 
+        # Sort by trust + relevance (trust carries significant weight for accuracy)
         ranked = sorted(
             candidates,
-            key=lambda item: (item["relevance_score"], -item["rank"]),
+            key=lambda item: (item.get("trust_score", 0.5) * 0.4 + item["relevance_score"] * 0.6, -item["rank"]),
             reverse=True,
         )
 
@@ -169,6 +260,162 @@ class SourceDiscovery:
             "results": selected,
             "token_usage": self.last_token_usage,
         }
+
+    def filter_relevant_sources(self, results: List[Dict], query: str) -> List[Dict]:
+        """Remove off-topic sources and boost real estate portals"""
+        detector = RealEstateIntentDetector()
+        filtered_results = []
+        is_re_query = detector.is_real_estate_query(query)
+        
+        for result in results:
+            url = result.get('url', '').lower()
+            domain = urlparse(url).netloc.lower()
+            
+            # Block clearly off-topic domains
+            if any(blocked in domain for blocked in detector.BLOCKED_DOMAINS):
+                continue
+            
+            # Boost real estate domains
+            if any(re_domain in domain for re_domain in detector.REAL_ESTATE_DOMAINS):
+                result['relevance_score'] = min(result.get('relevance_score', 0.5) * 1.5, 1.0)
+                result['source_trust'] = min(result.get('source_trust', 0.5) * 1.2, 0.98)
+            
+            # Check if content matches query intent
+            if is_re_query:
+                title = result.get('title', '').lower()
+                snippet = result.get('snippet', '').lower()
+                if detector.is_tourism_query(f"{title} {snippet}"):
+                    continue
+            
+            filtered_results.append(result)
+        return filtered_results
+
+    def generate_project_search_queries(self, query: str) -> List[str]:
+        """Generate targeted real estate project or rate queries with natural language"""
+        query_lower = query.lower()
+        locations = ['Pune', 'Mumbai', 'Bangalore', 'Wakad', 'Baner', 'Hinjewadi', 'Kharadi']
+        location = 'Pune'
+        for loc in locations:
+            if loc.lower() in query_lower:
+                location = loc
+                break
+        
+        # Check for circle rate / ready reckoner intent
+        is_rate_query = any(kw in query_lower for kw in ['circle rate', 'ready reckoner', 'valuation', 'market rate'])
+        
+        if is_rate_query:
+            return [
+                f"current circle rate in {location} 2026 nearby RTO",
+                f"ready reckoner rates {location} 2026 area wise list",
+                f"igrmaharashtra.gov.in circle rate {location}",
+                f"residential property rates near RTO {location}",
+                f"government valuation of land in {location} nearby"
+            ]
+
+        year_match = re.search(r'20\d{2}', query)
+        year = year_match.group(0) if year_match else '2026'
+        
+        return [
+            f"MahaRERA registered residential projects {location} {year}",
+            f"Magicbricks new projects in {location} {year}",
+            f"99acres upcoming residential projects {location} {year}",
+            f"Housing.com new launch projects {location} {year}",
+            f"new residential project launch {location} {year} Pune",
+            f"upcoming housing project {location} possession date {year}"
+        ]
+
+    def _calculate_source_trust(self, url: str) -> float:
+        """Calculate trust score for a source"""
+        domain = urlparse(url).netloc.replace('www.', '').lower()
+        
+        trust_scores = {
+            # Government (highest trust)
+            'maharashtra.gov.in': 0.98,
+            'igrmaharashtra.gov.in': 0.98,
+            'gov.in': 0.98,
+            'nic.in': 0.97,
+            'maharashtra.gov.in': 0.97,
+            
+            # International news (high trust)
+            'bbc.com': 0.96,
+            'reuters.com': 0.95,
+            'apnews.com': 0.94,
+            
+            # Indian news (good trust)
+            'timesofindia.indiatimes.com': 0.92,
+            'thehindu.com': 0.93,
+            'indianexpress.com': 0.91,
+            'economictimes.com': 0.90,
+            
+            # Real estate portals (medium trust)
+            'magicbricks.com': 0.82,
+            '99acres.com': 0.81,
+            'housing.com': 0.80,
+            
+            # Official documentation
+            'wikipedia.org': 0.85,
+            
+            # Unknown sources (low trust)
+            'default': 0.50
+        }
+        
+        for pattern, score in trust_scores.items():
+            if pattern != 'default' and pattern in domain:
+                return score
+        
+        return trust_scores['default']
+
+    def _check_verification(self, result: Dict) -> str:
+        """Check if content can be verified"""
+        verification_indicators = ['official', 'government', 'rera', 'verified', 'certified', 'legal', 'gazette']
+        
+        snippet = result.get('snippet', '').lower()
+        url = result.get('url', '').lower()
+        title = result.get('title', '').lower()
+        
+        for indicator in verification_indicators:
+            if indicator in snippet or indicator in url or indicator in title:
+                return "verified_indicator"
+        
+        return "unverified"
+
+    def is_valid_real_estate_source(self, url: str, title: str, snippet: str) -> bool:
+        """Validate if source is relevant to real estate"""
+        url_lower = url.lower()
+        title_lower = title.lower()
+        snippet_lower = snippet.lower()
+        combined = f"{title_lower} {snippet_lower}"
+        domain = urlparse(url_lower).netloc.lower()
+        
+        # Block tourism sites
+        if any(bad in url_lower for bad in ['tripadvisor', 'travelocity', 'makemytrip', 'goibibo', 'yatra']):
+            return False
+        
+        # Check for real estate indicators
+        real_estate_indicators = [
+            'project', 'apartment', 'flat', 'villa', 'builder', 'developer',
+            'possession', 'rera', 'launch', 'construction', 'site', 'tower',
+            'units', 'sqft', 'price', 'register', 'brochure', 'floor plan',
+            'circle rate', 'ready reckoner', 'valuation', 'market value', 'guideline'
+        ]
+        
+        indicator_count = sum(1 for ind in real_estate_indicators if ind in combined)
+        
+        # High trust domains need fewer indicators and shorter snippets
+        if 'maharera.mahaonline.gov.in' in domain:
+            return True # Never block official RERA
+            
+        known_re_domains = ['magicbricks', '99acres', 'housing', 'squareyards', 'maharera', 'commonfloor', 'nobroker']
+        is_known_domain = any(re_domain in domain for re_domain in known_re_domains)
+        
+        if is_known_domain:
+            return indicator_count >= 1 or len(snippet) > 20
+        
+        # For unknown domains, be stricter
+        if len(snippet) < 30:
+            return False
+        
+        return indicator_count >= 2
 
     def _reset_token_usage(self):
         self.last_token_usage = {
@@ -207,16 +454,18 @@ Return this JSON shape:
 {{
   "intent": "explanation|latest|comparison|pricing|recommendation|research|how_to",
   "key_entities": ["specific terms, acronyms, locations, products, laws, people"],
-  "search_queries": ["3 to 5 highly relevant web search queries"],
-  "positive_terms": ["terms that must indicate relevance"],
-  "avoid_terms": ["terms that indicate a wrong meaning or unrelated topic"]
+  "synonyms": ["technical synonyms, alternative terms, expanded acronyms"],
+  "search_queries": ["3-5 optimized queries for latest articles and official docs"],
+  "positive_terms": ["technical terms that indicate relevance"],
+  "avoid_terms": ["terms that indicate wrong context or unrelated topic"]
 }}
 
 Rules:
-- Resolve acronyms using query context. Example: in real estate/building context, FSI means Floor Space Index, not OFSI.
-- If the user asks about local property/government rates, prefer ready reckoner, circle rate, guideline value, IGR, property valuation terms.
-- Search queries should be specific enough to avoid unrelated results.
-- Do not include explanations outside JSON."""
+1. Identify all technical synonyms and aliases for keywords.
+2. Resolve acronyms (e.g. FSI, RERA, GST, RTO) based on query context.
+3. For govt rates, include: circle rate, ready reckoner, guideline value, market rate.
+4. Search queries MUST target official documents and latest articles (2026).
+5. Do not include explanations outside JSON."""
 
         try:
             response = self.client.chat.completions.create(
@@ -239,7 +488,8 @@ Rules:
                 rewritten_queries = self._build_search_queries(cleaned, intent, entities, domain_context)
 
             positive_terms = self._clean_term_list(data.get("positive_terms", []))
-            positive_terms = self._dedupe_terms(positive_terms + entities + self._important_terms(cleaned))
+            synonyms = self._clean_term_list(data.get("synonyms", []))
+            positive_terms = self._dedupe_terms(positive_terms + entities + synonyms + self._important_terms(cleaned))
             avoid_terms = self._clean_term_list(data.get("avoid_terms", []))
 
             return QueryUnderstanding(
@@ -389,7 +639,33 @@ Give unrelated or wrong-meaning results <= 0.15 even if they are from government
             context["context_terms"].extend(PROPERTY_RATE_TERMS)
             context["avoid_terms"].extend(PROPERTY_RATE_AVOID_TERMS)
 
+        # Construction status detection
+        construction_context = self._detect_construction_intent(query_lower)
+        if construction_context:
+            context["domain"] = "construction_status"
+            context["intent"] = construction_context['intent']
+            context["avoid_terms"].extend(construction_context['avoid_terms'])
+
         return context
+
+    def _detect_construction_intent(self, query: str) -> Optional[Dict]:
+        """Detect if user wants under-construction projects"""
+        query_lower = query.lower()
+        
+        construction_keywords = [
+            'under construction', 'ongoing projects', 'upcoming projects',
+            'new launches', 'yet to complete', 'possession date',
+            'construction status', 'project status', 'ongoing construction'
+        ]
+        
+        for keyword in construction_keywords:
+            if keyword in query_lower:
+                return {
+                    'intent': 'construction_status',
+                    'filter': 'under_construction',
+                    'avoid_terms': ['tourism', 'tourist', 'shopping', 'dining', 'restaurant']
+                }
+        return None
 
     def _is_property_rate_query(self, query_lower: str, entity_lowers: set) -> bool:
         has_rate_phrase = (
@@ -439,6 +715,21 @@ Give unrelated or wrong-meaning results <= 0.15 even if they are from government
                 f"{location_query} ready reckoner rate",
                 f"{location_query} government valuation property rate",
                 f"{location_query} IGR Maharashtra ready reckoner",
+            ]
+            return self._dedupe_queries(queries)
+
+        if domain_context.get("domain") == "construction_status":
+            location_terms = [entity for entity in entities if entity.lower() in KNOWN_REAL_ESTATE_LOCATIONS]
+            location = location_terms[0] if location_terms else "Pune"
+            queries = [
+                f"under construction residential projects in {location} 2026",
+                f"ongoing housing projects {location} Pune",
+                f"new upcoming projects {location} possession date",
+                f"{location} new construction sites real estate",
+                f"under construction flats in {location} Punawale Hinjewadi",
+                f"site:magicbricks.com under construction projects {location}",
+                f"site:99acres.com ongoing construction {location}",
+                f"{location} RERA registered projects under construction"
             ]
             return self._dedupe_queries(queries)
 

@@ -8,8 +8,21 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   status?: string;
-  sources?: { url: string; title: string }[];
+  sources?: { 
+    url: string; 
+    title: string; 
+    time_ago?: string;
+    trust_score?: number;
+    verification_status?: string;
+  }[];
+  accuracy?: {
+    accuracy_score: number;
+    confidence_level: string;
+    recommendation: string;
+    validated_claims: { claim: string; source_count: number }[];
+  };
   isStreaming?: boolean;
+  generatedAt?: string;
 };
 
 export default function Home() {
@@ -18,7 +31,7 @@ export default function Home() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I am an AI agent with access to live web search. Ask me anything, and I'll search the web, read the best articles, and give you a beautifully formatted answer."
+      content: "Hello! I am an AI agent with access to live web search. Ask me anything, and I'll search the web, read the best articles, and give you a beautifully formatted answer with verified sources."
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -84,9 +97,27 @@ export default function Home() {
                   } else if (data.type === 'error') {
                     return { ...msg, status: '❌ Agent Error: ' + data.content, isStreaming: false };
                   } else if (data.type === 'done') {
-                    const sources = data.result?.results?.slice(0, 3)?.map((r: any) => ({ url: r.url, title: r.title })) || data.sources || [];
+                    const sources = data.result?.results?.slice(0, 4)?.map((r: any) => ({ 
+                      url: r.url, 
+                      title: r.title, 
+                      time_ago: r.time_ago || 'Recently',
+                      trust_score: r.source_trust || r.trust_score,
+                      verification_status: r.verification_status
+                    })) || data.sources || [];
+                    
                     const fallbackContent = (!msg.content && data.result?.analysis) ? data.result.analysis : msg.content;
-                    return { ...msg, content: fallbackContent, sources, isStreaming: false, status: '' };
+                    const generatedAt = data.result?.timestamp ? new Date(data.result.timestamp).toLocaleString() : new Date().toLocaleString();
+                    const accuracy = data.result?.accuracy;
+                    
+                    return { 
+                      ...msg, 
+                      content: fallbackContent, 
+                      sources, 
+                      accuracy,
+                      isStreaming: false, 
+                      status: '', 
+                      generatedAt 
+                    };
                   }
                 }
                 return msg;
@@ -125,7 +156,7 @@ export default function Home() {
             </h1>
           </div>
           <div className="text-xs font-medium px-3 py-1 rounded-full bg-slate-800/50 text-slate-400 border border-slate-700/50">
-            Powered by Next.js & AI
+            High Accuracy Agent
           </div>
         </div>
       </header>
@@ -139,7 +170,7 @@ export default function Home() {
               className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4 duration-500`}
             >
               <div 
-                className={`flex flex-col max-w-[90%] sm:max-w-[80%] rounded-2xl p-5 sm:p-6 shadow-xl ${
+                className={`flex flex-col max-w-[90%] sm:max-w-[85%] rounded-2xl p-5 sm:p-6 shadow-xl ${
                   msg.role === 'user' 
                     ? 'bg-gradient-to-br from-blue-600 to-cyan-600 text-white rounded-tr-sm border border-blue-500/30 shadow-blue-900/20' 
                     : 'bg-slate-800/60 backdrop-blur-sm text-slate-200 rounded-tl-sm border border-slate-700/50 shadow-slate-950/50'
@@ -147,27 +178,48 @@ export default function Home() {
               >
                 {/* Assistant Header / Status */}
                 {msg.role === 'assistant' && (
-                  <div className="flex items-center gap-3 mb-3 border-b border-slate-700/50 pb-3">
+                  <div className="flex items-center gap-3 mb-4 border-b border-slate-700/50 pb-3">
                     <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center shrink-0">
                       <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                     </div>
-                    {msg.status ? (
-                      <div className={`text-sm font-medium flex items-center ${msg.status.includes('❌') ? 'text-red-400' : 'text-cyan-400'}`}>
-                        {!msg.status.includes('❌') && (
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+                    <div className="flex-1 flex flex-wrap items-center gap-2 justify-between">
+                      {msg.status ? (
+                        <div className={`text-sm font-medium flex items-center ${msg.status.includes('❌') ? 'text-red-400' : 'text-cyan-400'}`}>
+                          {!msg.status.includes('❌') && (
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          )}
+                          {msg.status}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-300">Verified Answer</span>
+                          {msg.accuracy && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              msg.accuracy.accuracy_score >= 90 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                              msg.accuracy.accuracy_score >= 70 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                              'bg-red-500/10 text-red-400 border-red-500/20'
+                            }`}>
+                              {msg.accuracy.confidence_level.split(' - ')[0]}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        {msg.generatedAt && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-900/50 px-2 py-0.5 rounded-full border border-slate-700/50">
+                            {msg.generatedAt}
+                          </span>
                         )}
-                        {msg.status}
                       </div>
-                    ) : (
-                      <span className="text-sm font-semibold text-slate-300">Agent Response</span>
-                    )}
+                    </div>
                   </div>
                 )}
+                
                 
                 {/* Message Content */}
                 <div 
@@ -187,7 +239,7 @@ export default function Home() {
                       <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H14" />
                       </svg>
-                      Sources Consulted
+                      Verified Sources
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {msg.sources.map((s, i) => (
@@ -198,12 +250,38 @@ export default function Home() {
                           rel="noopener noreferrer" 
                           className="group flex flex-col p-3 rounded-xl bg-slate-900/40 border border-slate-700/50 hover:bg-slate-800/80 hover:border-cyan-500/50 transition-all duration-300"
                         >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-tighter">
+                              {new URL(s.url).hostname.replace('www.', '')}
+                            </span>
+                            {s.trust_score !== undefined && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                s.trust_score >= 0.9 ? 'bg-emerald-500/20 text-emerald-400' : 
+                                s.trust_score >= 0.8 ? 'bg-cyan-500/20 text-cyan-400' : 
+                                'bg-slate-700 text-slate-400'
+                              }`}>
+                                {(s.trust_score * 100).toFixed(0)}% Trust
+                              </span>
+                            )}
+                          </div>
                           <span className="text-sm font-medium text-slate-200 group-hover:text-cyan-400 line-clamp-1 transition-colors">
                             {s.title}
                           </span>
-                          <span className="text-xs text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400">
-                            {new URL(s.url).hostname}
-                          </span>
+                          <div className="flex items-center justify-between mt-2 gap-2">
+                            <div className="flex items-center gap-1.5">
+                              {s.verification_status === 'verified_indicator' && (
+                                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400">
+                                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"></path></svg>
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-500 group-hover:text-slate-400">
+                                {s.time_ago}
+                              </span>
+                            </div>
+                            <svg className="w-3 h-3 text-slate-600 group-hover:text-cyan-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </div>
                         </a>
                       ))}
                     </div>

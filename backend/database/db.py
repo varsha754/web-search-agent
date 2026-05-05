@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import hashlib
 from diskcache import Cache
 
-from config import config
+from core.config import config
 
 
 class SearchCache:

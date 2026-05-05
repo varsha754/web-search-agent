@@ -7,14 +7,16 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import sys
+from dataclasses import asdict
 
-from search_agent.searcher import DuckDuckGoSearcher
-from search_agent.source_discovery import SourceDiscovery
-from search_agent.processor import ContentProcessor
-from search_agent.analyzer import LightweightAnalyzer
-from search_agent.formatter import ResponseFormatter
-from search_agent.cache import SearchCache
-from config import config
+from tools.search import DuckDuckGoSearcher
+from tools.discovery import SourceDiscovery
+from tools.browser import ContentProcessor
+from agents.UI_dashboard.prompts import LightweightAnalyzer
+from agents.UI_dashboard.tools import ResponseFormatter
+from database.db import SearchCache
+from core.config import config
+from utils.validation import AccuracyValidator
 
 SEARCH_CACHE_VERSION = "source-discovery-v5"
 
@@ -26,12 +28,14 @@ class DuckDuckGoSearchAgent:
     """
     
     def __init__(self):
+        # Primary searcher is DuckDuckGo (with Bing fallback)
         self.searcher = DuckDuckGoSearcher()
         self.discovery = SourceDiscovery(self.searcher)
         self.processor = ContentProcessor()
         self.analyzer = LightweightAnalyzer()
         self.formatter = ResponseFormatter()
         self.cache = SearchCache() if config.CACHE_ENABLED else None
+        self.validator = AccuracyValidator()
         
         # Stats
         self.stats = {
@@ -104,21 +108,54 @@ class DuckDuckGoSearchAgent:
             if status_callback: status_callback(f'Reading full content from {len(urls)} top sources...')
             content_results = self.processor.process_batch(urls)
             
-            # Merge content
-            for result in results_dict:
-                for content in content_results:
-                    if result['url'] == content['url']:
-                        result['content'] = content['content']
-                        result['title'] = content['title'] or result['title']
-                        break
+            # Filter and Merge content
+            intent = discovery.get("understanding", {}).get("intent")
+            if content_results:
+                final_results = []
+                for result in results_dict:
+                    found_content = False
+                    for content in content_results:
+                        if content and result['url'] == content.get('url'):
+                            # Apply real estate filtering for construction queries
+                            content_text = content.get('content', '')
+                            if intent == "construction_status":
+                                if self.processor._is_tourism_content(content_text):
+                                    if status_callback: status_callback(f"Skipping tourism content: {result['url'][:30]}...")
+                                    continue
+                                if not self.processor._is_real_estate_content(content_text):
+                                    # If not clearly real estate, but not tourism, we might keep it but lower trust
+                                    pass
+
+                            result['content'] = content_text
+                            result['title'] = content.get('title') or result['title']
+                            result['published_date'] = content.get('published_date')
+                            result['time_ago'] = content.get('time_ago', 'Date unknown')
+                            result['source_trust'] = content.get('source_trust', 0.5)
+                            result['extracted_data'] = content.get('extracted_data')
+                            found_content = True
+                            break
+                    if found_content or not fetch_content:
+                        final_results.append(result)
+                results_dict = final_results
         
         # Analyze if needed - always use LLM when available for accurate answers
         analysis = None
         token_before = self.analyzer.get_token_report()
         if self.analyzer.needs_analysis(query, results_dict):
-            keyword_insights = self.analyzer.extract_keyword_insights(results_dict)
-            if status_callback: status_callback('Analyzing data and generating answer...')
-            analysis = self.analyzer.analyze_results(query, results_dict, keyword_insights, stream_callback=stream_callback)
+            if status_callback: status_callback('Analyzing data and generating trusted answer...')
+            intent = discovery.get("understanding", {}).get("intent")
+            trusted_response = self.analyzer.generate_trusted_answer(
+                query, results_dict, self.validator, intent=intent, stream_callback=stream_callback
+            )
+            analysis = trusted_response['answer']
+            output_metadata = {
+                'accuracy_score': trusted_response['accuracy_score'],
+                'confidence_level': trusted_response['confidence_level'],
+                'recommendation': trusted_response['recommendation'],
+                'validated_claims': trusted_response['validated_claims']
+            }
+        else:
+            output_metadata = {}
         
         # Prepare output
         output = {
@@ -129,6 +166,7 @@ class DuckDuckGoSearchAgent:
             'results_count': len(results_dict),
             'results': results_dict,
             'analysis': analysis,
+            'accuracy': output_metadata,
             'timestamp': datetime.now().isoformat()
         }
         
@@ -149,6 +187,12 @@ class DuckDuckGoSearchAgent:
         if use_cache and self.cache:
             self.cache.set(cache_query, output)
         
+        # Convert any dataclasses to dicts for JSON serialization at the very end
+        for result in results_dict:
+            extracted = result.get('extracted_data')
+            if extracted and hasattr(extracted, '__dataclass_fields__'):
+                result['extracted_data'] = asdict(extracted)
+
         return output
     
     async def search_async(self, query: str, max_results: int = 5) -> Dict:

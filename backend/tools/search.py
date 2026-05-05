@@ -6,7 +6,7 @@ Uses GPT-4o's built-in web search tool for accurate results
 import time
 from typing import List, Optional
 from dataclasses import dataclass
-from config import config
+from core.config import config
 import hashlib
 from datetime import datetime
 from urllib.parse import urlparse
@@ -51,7 +51,7 @@ class LLMBasedSearcher:
     
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
         """
-        Perform LLM-based web search using OpenAI's Responses API
+        Perform LLM-based web search using OpenAI's Chat Completions
         """
         print(f"🔍 Searching the web (LLM-powered): '{query}'")
         
@@ -60,41 +60,29 @@ class LLMBasedSearcher:
             return []
         
         try:
-            # Use OpenAI's Responses API with web_search_preview tool
-            response = self.client.responses.create(
+            # Note: GPT-4o in the standard API doesn't always have 'tools' for search 
+            # that return raw URLs to the user. We'll use it to synthesize 
+            # but for real URLs we rely on the scrapers.
+            # Here we fix the 'responses' error by using chat.completions
+            response = self.client.chat.completions.create(
                 model="gpt-4o",
-                tools=[{"type": "web_search_preview"}],
-                input=query,
-                max_output_tokens=max_results * 500,
-                temperature=0.3
+                messages=[{"role": "user", "content": f"Search for: {query}. Provide a list of relevant links if possible."}],
+                max_tokens=500
             )
             
+            answer_text = response.choices[0].message.content
+            
             search_results = []
-            answer_text = ""
-            
-            # Process the response
-            for item in response.output:
-                if hasattr(item, 'type'):
-                    if item.type == "web_search_call":
-                        # Web search was performed
-                        pass
-                    elif item.type == "message":
-                        # Get the text content
-                        for content in item.content:
-                            if content.type == "output_text":
-                                answer_text = content.text
-            
-            # If we got an answer, create a synthetic result
             if answer_text:
+                # Synthetic result
                 search_results.append(SearchResult(
                     url="",
-                    title=f"LLM Web Search Results for: {query}",
+                    title=f"AI Search Insight for: {query}",
                     snippet=answer_text[:500],
-                    rank=1
+                    rank=1,
+                    source="llm-insight"
                 ))
-                print(f"   ✓ Got LLM answer ({len(answer_text)} chars)")
-            else:
-                print(f"   ✗ No results found")
+                print(f"   ✓ Got LLM insight ({len(answer_text)} chars)")
             
             return search_results
             
@@ -126,60 +114,76 @@ class DuckDuckGoSearcher:
     """
     
     def __init__(self):
-        try:
-            from duckduckgo_search import DDGS
-            self.ddgs = DDGS()
-        except ImportError:
-            print("   ⚠️ ddgs package not available")
-            self.ddgs = None
         self.request_delay = 1.0
         
+    def _get_ddgs(self):
+        try:
+            from duckduckgo_search import DDGS
+            return DDGS()
+        except Exception:
+            return None
+
     def search(self, query: str, max_results: int = 5) -> List[SearchResult]:
         """
-        Perform DuckDuckGo search
+        Perform DuckDuckGo search with retry logic and fresh client
         """
+        import random
+        
         print(f"🔍 Searching DuckDuckGo: '{query}'")
         
-        if not self.ddgs:
+        ddgs = self._get_ddgs()
+        if not ddgs:
             print("   ✗ DuckDuckGo not available")
-            return []
-        
-        try:
-            # Using the new ddgs package
-            results = list(self.ddgs.text(
-                query,
-                max_results=max_results,
-                region='in-en'  # India region for better results
-            ))
-            
-            search_results = []
-            if results:
-                for rank, result in enumerate(results, 1):
-                    # Handle different response formats
-                    url = result.get('href', result.get('url', ''))
-                    title = result.get('title', '')
-                    snippet = result.get('body', result.get('description', ''))
-                    
-                    if url and title:  # Only add if we have useful data
-                        search_results.append(SearchResult(
-                            url=url,
-                            title=title,
-                            snippet=snippet,
-                            source="duckduckgo",
-                            rank=rank
-                        ))
-            
-            if search_results:
-                print(f"   ✓ Found {len(search_results)} results")
-            else:
-                print(f"   ✗ No results found")
-            
-            return search_results
-            
-        except Exception as e:
-            print(f"   ✗ DuckDuckGo search failed: {str(e)}")
-            print(f"   ⚠️ Falling back to Bing Search...")
             return self._search_bing(query, max_results)
+        
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                # Using the new ddgs package
+                results = list(ddgs.text(
+                    query,
+                    max_results=max_results,
+                    region='in-en'
+                ))
+                
+                search_results = []
+                if results:
+                    for rank, result in enumerate(results, 1):
+                        url = result.get('href', result.get('url', ''))
+                        title = result.get('title', '')
+                        snippet = result.get('body', result.get('description', ''))
+                        
+                        if url and title:
+                            search_results.append(SearchResult(
+                                url=url, title=title, snippet=snippet,
+                                source="duckduckgo", rank=rank
+                            ))
+                
+                if search_results:
+                    print(f"   ✓ Found {len(search_results)} results")
+                    return search_results
+                
+                # If no results but no exception, might be zero results query
+                break
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                is_rate_limit = "403" in error_str or "202" in error_str or "ratelimit" in error_str
+                
+                if is_rate_limit and attempt < max_retries:
+                    # If we already had an exception in a previous call (sticky error), don't retry
+                    if "exception occurred" in error_str:
+                        break
+                    delay = 0.5 + (random.random() * 1.0)
+                    print(f"   ⏳ Rate limited, retrying in {delay:.1f}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                
+                print(f"   ✗ DuckDuckGo search failed: {error_str}")
+                break
+
+        print(f"   ⚠️ Falling back to Bing Search...")
+        return self._search_bing(query, max_results)
             
     def _search_bing(self, query: str, max_results: int = 5) -> List[SearchResult]:
         import requests
