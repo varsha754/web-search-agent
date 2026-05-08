@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 
 # 1. Patch main.py to set fetch_content=True by default in search()
 with open('main.py', 'r', encoding='utf-8') as f:

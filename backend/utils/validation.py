@@ -1,4 +1,4 @@
-"""
+﻿"""
 Accuracy Validation and Data Structures for High-Confidence Extraction
 """
 
@@ -181,7 +181,7 @@ class AccuracyValidator:
                 'validated_claims': [],
                 'conflicting_claims': [],
                 'sources_agreed': 0,
-                'recommendation': "⚠️ Single source only - verify independently"
+                'recommendation': "âš ï¸ Single source only - verify independently"
             }
         
         # For single sources from high trust domains, give a higher base score
@@ -194,16 +194,16 @@ class AccuracyValidator:
             'validated_claims': [],
             'conflicting_claims': [],
             'sources_agreed': 1,
-            'recommendation': f"🟢 Verified via {data.url.split('/')[2]} (Trust: {data.source_trust*100:.0f}%)"
+            'recommendation': f"ðŸŸ¢ Verified via {data.url.split('/')[2]} (Trust: {data.source_trust*100:.0f}%)"
         }
     
     def _get_recommendation(self, accuracy: float) -> str:
         """Get user-friendly recommendation"""
         if accuracy >= 80:
-            return "✅ High confidence - Data verified across multiple trusted sources"
+            return " High confidence - Data verified across multiple trusted sources"
         elif accuracy >= 60:
-            return "🟢 Good confidence - Generally reliable, minor verification recommended"
+            return " Good confidence - Generally reliable, minor verification recommended"
         elif accuracy >= 40:
-            return "🟡 Medium confidence - Verify key numbers with official sources"
+            return " Medium confidence - Verify key numbers with official sources"
         else:
-            return "🔴 Low confidence - Cross-check with multiple independent sources"
+            return " Low confidence - Cross-check with multiple independent sources"

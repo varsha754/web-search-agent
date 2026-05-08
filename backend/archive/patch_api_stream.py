@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 
 with open("api.py", "r", encoding="utf-8") as f:
@@ -76,7 +76,7 @@ chat_html = """    <html>
             button { position: absolute; right: 10px; top: 10px; bottom: 10px; background: #19c37d; color: white; border: none; border-radius: 8px; padding: 0 15px; cursor: pointer; font-weight: bold; }
             button:hover { background: #1a8859; }
             .status-update { color: #8e8ea0; font-size: 14px; font-style: italic; margin-bottom: 10px; display: flex; align-items: center; }
-            .status-update::before { content: "🔄"; display: inline-block; margin-right: 8px; animation: spin 2s linear infinite; }
+            .status-update::before { content: "ðŸ”„"; display: inline-block; margin-right: 8px; animation: spin 2s linear infinite; }
             @keyframes spin { 100% { transform: rotate(360deg); } }
             
             /* Markdown Styling */
@@ -97,7 +97,7 @@ chat_html = """    <html>
         </style>
     </head>
     <body>
-        <div class="header">🦆 Search & Extract Agent</div>
+        <div class="header">ðŸ¦† Search & Extract Agent</div>
         
         <div class="chat-container" id="chatContainer">
             <div class="message assistant">
@@ -191,7 +191,7 @@ chat_html = """    <html>
                                         }
                                         
                                         if (data.result.results && data.result.results.length > 0) {
-                                            let sourcesHtml = '<div class="sources-box"><h4>📄 Sources Read</h4>';
+                                            let sourcesHtml = '<div class="sources-box"><h4>ðŸ“„ Sources Read</h4>';
                                             for (const r of data.result.results.slice(0, 3)) {
                                                 sourcesHtml += `
                                                     <div class="source-item">
@@ -206,7 +206,7 @@ chat_html = """    <html>
                                         chatContainer.scrollTop = chatContainer.scrollHeight;
                                     } else if (data.type === 'error') {
                                         cursorSpan.style.display = 'none';
-                                        statusDiv.innerHTML = '❌ Error: ' + data.content;
+                                        statusDiv.innerHTML = 'âŒ Error: ' + data.content;
                                         statusDiv.style.color = '#ef4444';
                                         statusDiv.style.animation = 'none';
                                         statusDiv.className = '';
@@ -219,7 +219,7 @@ chat_html = """    <html>
                     }
                 } catch (error) {
                     cursorSpan.style.display = 'none';
-                    statusDiv.innerHTML = '❌ Network Error: ' + error.message;
+                    statusDiv.innerHTML = 'âŒ Network Error: ' + error.message;
                     statusDiv.style.color = '#ef4444';
                     statusDiv.className = '';
                 }

@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 with open("api.py", "r", encoding="utf-8") as f:
     api_content = f.read()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Enhanced CLI with LLM-powered web search
 Uses OpenAI's web search tool for accurate results
@@ -46,7 +46,7 @@ class DirectSearchAgent:
                 from openai import OpenAI
                 self.client = OpenAI(api_key=config.OPENAI_API_KEY)
             except Exception as e:
-                print(f"   ⚠️ LLM not available: {e}")
+                print(f"   âš ï¸ LLM not available: {e}")
     
     def get_token_report(self) -> dict:
         """Get token usage report"""
@@ -101,10 +101,10 @@ class DirectSearchAgent:
         if disambiguate:
             disambiguated = self._disambiguate_query(query)
             if disambiguated != query:
-                print(f"   ℹ️  Disambiguated: '{query}' → '{disambiguated}'")
+                print(f"   â„¹ï¸  Disambiguated: '{query}' â†’ '{disambiguated}'")
                 query = disambiguated
         
-        print(f"\n🎯 Direct Search: '{query}'")
+        print(f"\nðŸŽ¯ Direct Search: '{query}'")
         
         # Step 1: Discover real source URLs first.
         # The LLM is only used later to summarize these sources.
@@ -216,13 +216,13 @@ Answer:"""
                 'model': config.LLM_MODEL
             }
             
-            print(f"   🔢 Tokens used: {query_tokens} (input: {input_tokens}, output: {output_tokens})")
-            print(f"   💰 Est. cost: ${cost:.6f}")
+            print(f"   ðŸ”¢ Tokens used: {query_tokens} (input: {input_tokens}, output: {output_tokens})")
+            print(f"   ðŸ’° Est. cost: ${cost:.6f}")
             
             return response.choices[0].message.content
             
         except Exception as e:
-            print(f"   ⚠️ LLM error: {e}")
+            print(f"   âš ï¸ LLM error: {e}")
             self.last_token_usage = None
             return None
 
@@ -243,7 +243,7 @@ class QueryOptimizer:
                 from openai import OpenAI
                 self.client = OpenAI(api_key=config.OPENAI_API_KEY)
             except Exception as e:
-                print(f"   ⚠️ LLM not available: {e}")
+                print(f"   âš ï¸ LLM not available: {e}")
     
     def get_token_report(self) -> dict:
         """Get token usage report"""
@@ -305,8 +305,8 @@ Respond in JSON format:
             self.total_tokens += query_tokens
             self.total_cost += cost
             
-            print(f"   🔢 Tokens used: {query_tokens} (input: {input_tokens}, output: {output_tokens})")
-            print(f"   💰 Est. cost: ${cost:.6f}")
+            print(f"   ðŸ”¢ Tokens used: {query_tokens} (input: {input_tokens}, output: {output_tokens})")
+            print(f"   ðŸ’° Est. cost: ${cost:.6f}")
             
             result_text = response.choices[0].message.content
             # Parse JSON from response
@@ -324,7 +324,7 @@ Respond in JSON format:
             return self._simple_intent_detection(query)
                 
         except Exception as e:
-            print(f"   ⚠️ LLM error: {e}")
+            print(f"   âš ï¸ LLM error: {e}")
             return self._simple_intent_detection(query)
     
     def _simple_intent_detection(self, query: str) -> dict:
@@ -454,12 +454,12 @@ class SmartSearchCLI:
         """Search with LLM-powered intent understanding"""
         
         self.total_queries += 1
-        print(f"\n🔍 Analyzing: '{query}'")
+        print(f"\nðŸ” Analyzing: '{query}'")
         
         # Use LLM to understand intent and generate optimized queries
         intent_info = self.optimizer.understand_intent(query)
-        print(f"   📊 Intent: {intent_info.get('intent', 'unknown')}")
-        print(f"   📍 Location: {intent_info.get('location', 'Pune')}")
+        print(f"   ðŸ“Š Intent: {intent_info.get('intent', 'unknown')}")
+        print(f"   ðŸ“ Location: {intent_info.get('location', 'Pune')}")
         
         # Generate optimized search queries based on intent
         optimized_queries = self.optimizer.generate_search_queries(query, intent_info)
@@ -469,7 +469,7 @@ class SmartSearchCLI:
         
         # Try each optimized query until we get results
         for q in optimized_queries:
-            print(f"\n🔎 Trying: '{q}'")
+            print(f"\nðŸ”Ž Trying: '{q}'")
             results = self.searcher.search(q, max_results)
             if results:
                 used_query = q
@@ -477,7 +477,7 @@ class SmartSearchCLI:
         
         # If no results with optimized queries, try original
         if not results:
-            print(f"\n🔍 Trying original: '{query}'")
+            print(f"\nðŸ” Trying original: '{query}'")
             results = self.searcher.search(query, max_results)
             if results:
                 used_query = query
@@ -500,7 +500,7 @@ class SmartSearchCLI:
     
     def search_news(self, query: str, max_results: int = 5) -> dict:
         """Search news with LLM optimization"""
-        print(f"\n📰 Analyzing: '{query}'")
+        print(f"\nðŸ“° Analyzing: '{query}'")
         
         intent_info = self.optimizer.understand_intent(query)
         optimized_queries = self.optimizer.generate_search_queries(query, intent_info)
@@ -509,7 +509,7 @@ class SmartSearchCLI:
         used_query = None
         
         for q in optimized_queries:
-            print(f"\n📰 Trying: '{q}'")
+            print(f"\nðŸ“° Trying: '{q}'")
             results = self.searcher.search_news(q, max_results)
             if results:
                 used_query = q
@@ -537,32 +537,32 @@ class SmartSearchCLI:
     def format_results(self, result: dict):
         """Format and display results"""
         if not result['success']:
-            print(f"\n❌ {result.get('error', 'No results found')}")
-            print("\n💡 TIPS FOR BETTER RESULTS:")
-            print("   • Use keywords instead of full sentences")
-            print("   • Good: 'Pune investment hotspots 2026'")
-            print("   • Good: 'best areas to invest in Pune'")
-            print("   • Good: 'Wakad vs Baner investment comparison'")
-            print("   • Bad: 'What do you consider better investment in pune?'")
-            print("\n📝 Try these working examples:")
+            print(f"\nâŒ {result.get('error', 'No results found')}")
+            print("\n TIPS FOR BETTER RESULTS:")
+            print("   â€¢ Use keywords instead of full sentences")
+            print("   â€¢ Good: 'Pune investment hotspots 2026'")
+            print("   â€¢ Good: 'best areas to invest in Pune'")
+            print("   â€¢ Good: 'Wakad vs Baner investment comparison'")
+            print("   â€¢ Bad: 'What do you consider better investment in pune?'")
+            print("\nðŸ“ Try these working examples:")
             print("   python cli.py 'Pune best investment areas'")
             print("   python cli.py 'Wakad vs Baner real estate'")
             print("   python cli.py 'Hinjewadi property growth 2026'")
             return
         
         print(f"\n{'='*70}")
-        print(f"📊 SEARCH RESULTS")
+        print(f"ðŸ“Š SEARCH RESULTS")
         print(f"{'='*70}")
-        print(f"📌 Your query: {result['original_query']}")
+        print(f"ðŸ“Œ Your query: {result['original_query']}")
         if result.get('optimized'):
-            print(f"✨ Used: {result['search_query']}")
-        print(f"📈 Found: {result['results_count']} results")
+            print(f"âœ¨ Used: {result['search_query']}")
+        print(f"ðŸ“ˆ Found: {result['results_count']} results")
         
         # Show token usage if available
         token_report = self.optimizer.get_token_report()
         if token_report['total_tokens'] > 0:
-            print(f"🔢 Total tokens used: {token_report['total_tokens']}")
-            print(f"💰 Total cost: ${token_report['total_cost']:.6f}")
+            print(f"ðŸ”¢ Total tokens used: {token_report['total_tokens']}")
+            print(f"ðŸ’° Total cost: ${token_report['total_cost']:.6f}")
         
         print(f"{'='*70}\n")
         
@@ -575,9 +575,9 @@ class SmartSearchCLI:
             if len(snippet) > 250:
                 snippet = snippet[:250] + "..."
             
-            print(f"{i}. 📌 {title}")
-            print(f"   📝 {snippet}")
-            print(f"   🔗 {url}")
+            print(f"{i}. ðŸ“Œ {title}")
+            print(f"   ðŸ“ {snippet}")
+            print(f"   ðŸ”— {url}")
             print()
         
         print(f"{'='*70}\n")
@@ -591,7 +591,7 @@ class EnhancedSearchCLI:
         self.analyzer = EnhancedAnalyzer()
 
     def search(self, query: str, max_results: int = 5) -> Dict:
-        print(f"\n🔍 Enhanced search: '{query}'")
+        print(f"\nðŸ” Enhanced search: '{query}'")
         print("-" * 50)
 
         results = self.searcher.search_with_quality(query, max_results)
@@ -629,31 +629,31 @@ class EnhancedSearchCLI:
 
     def format_results(self, result: Dict):
         if not result['success']:
-            print(f"\n❌ {result.get('error', 'No results found')}")
+            print(f"\nâŒ {result.get('error', 'No results found')}")
             return
 
         analysis = result.get('analysis', {})
 
         print(f"\n{'='*70}")
-        print("📊 ENHANCED SEARCH RESULTS")
+        print("ðŸ“Š ENHANCED SEARCH RESULTS")
         print(f"{'='*70}")
-        print(f"📌 Query: {result['query']}")
-        print(f"📈 Found: {result['results_count']} results")
-        print(f"🎯 Confidence: {analysis.get('confidence_level', 'Unknown')} ({analysis.get('confidence', 0)}%)")
-        print(f"📚 Sources: {analysis.get('sources_used', 0)} total, {analysis.get('high_trust_sources', 0)} high-trust")
+        print(f"ðŸ“Œ Query: {result['query']}")
+        print(f"ðŸ“ˆ Found: {result['results_count']} results")
+        print(f"ðŸŽ¯ Confidence: {analysis.get('confidence_level', 'Unknown')} ({analysis.get('confidence', 0)}%)")
+        print(f"ðŸ“š Sources: {analysis.get('sources_used', 0)} total, {analysis.get('high_trust_sources', 0)} high-trust")
 
         token_usage = analysis.get('token_usage') or {}
         if token_usage.get('total_tokens', 0) > 0:
-            print(f"🔢 Input tokens: {token_usage.get('input_tokens', 0)}")
-            print(f"🔢 Output tokens: {token_usage.get('output_tokens', 0)}")
-            print(f"🔢 Total tokens: {token_usage.get('total_tokens', 0)}")
-            print(f"💰 Est. cost: ${token_usage.get('total_cost', 0):.6f}")
+            print(f"ðŸ”¢ Input tokens: {token_usage.get('input_tokens', 0)}")
+            print(f"ðŸ”¢ Output tokens: {token_usage.get('output_tokens', 0)}")
+            print(f"ðŸ”¢ Total tokens: {token_usage.get('total_tokens', 0)}")
+            print(f"ðŸ’° Est. cost: ${token_usage.get('total_cost', 0):.6f}")
 
         print(f"{'='*70}\n")
 
-        print(f"💡 ANSWER:\n{analysis.get('answer', 'No answer generated')}\n")
+        print(f"ðŸ’¡ ANSWER:\n{analysis.get('answer', 'No answer generated')}\n")
 
-        print("📌 SOURCES")
+        print("ðŸ“Œ SOURCES")
         print("-" * 70)
         source_scores = analysis.get('source_scores', [])
         score_by_url = {source.get('url'): source for source in source_scores}
@@ -662,17 +662,17 @@ class EnhancedSearchCLI:
             trust = score_by_url.get(source.get('url'), {})
             trust_score = trust.get('trust_score', 0)
             trust_level = trust.get('trust_level', 'Unknown')
-            trust_symbol = "🟢" if trust_score >= 70 else "🟡" if trust_score >= 40 else "🔴"
+            trust_symbol = "ðŸŸ¢" if trust_score >= 70 else "ðŸŸ¡" if trust_score >= 40 else "ðŸ”´"
             print(f"{i}. {trust_symbol} {source.get('title', '')[:80]}")
             print(f"   Trust: {trust_score}% ({trust_level})")
             print(f"   Relevance: {source.get('relevance_score', 0):.1f}% | Quality: {source.get('quality_score', 0):.1f}%")
             print(f"   Type: {source.get('content_type', 'html')} | Domain authority: {source.get('domain_authority', 0):.1f}")
-            print(f"   🔗 {source.get('url', '')}")
+            print(f"   ðŸ”— {source.get('url', '')}")
             print()
 
         consistency = analysis.get('consistency', {})
         if consistency.get('contradictions'):
-            print(f"⚠️ NOTE: {', '.join(consistency['contradictions'])}")
+            print(f"âš ï¸ NOTE: {', '.join(consistency['contradictions'])}")
             print()
 
         print(f"{'='*70}\n")
@@ -714,7 +714,7 @@ EXAMPLES:
         enhanced_cli = EnhancedSearchCLI()
 
         if args.interactive or not args.query:
-            print("\n🔍 ENHANCED SEARCH CLI")
+            print("\nðŸ” ENHANCED SEARCH CLI")
             print("=" * 50)
             print("Results include relevance, quality, trust, and confidence scores.")
             print("Type 'exit' to quit.")
@@ -722,17 +722,17 @@ EXAMPLES:
 
             while True:
                 try:
-                    user_input = input("\n🔍 Search: ").strip()
+                    user_input = input("\nðŸ” Search: ").strip()
                     if not user_input:
                         continue
                     if user_input.lower() in ['exit', 'quit', 'q']:
-                        print("\n👋 Goodbye!")
+                        print("\nðŸ‘‹ Goodbye!")
                         break
 
                     result = enhanced_cli.search(user_input, args.max_results)
                     enhanced_cli.format_results(result)
                 except KeyboardInterrupt:
-                    print("\n\n👋 Goodbye!")
+                    print("\n\nðŸ‘‹ Goodbye!")
                     break
             return
 
@@ -752,19 +752,19 @@ EXAMPLES:
     # Show tips in interactive mode
     if args.interactive or not args.query:
         print("\n" + "=" * 70)
-        print("🦆 DUCKDUCKGO WEB SEARCH CLI")
+        print("ðŸ¦† DUCKDUCKGO WEB SEARCH CLI")
         print("=" * 70)
-        print("💡 SEARCH MODES:")
+        print("ðŸ’¡ SEARCH MODES:")
         print("   --direct (default): Searches EXACTLY what you ask")
         print("   --smart: Expands query for real estate research")
         print("=" * 70)
-        print("\n📝 Direct Search Examples:")
-        print("   → python cli.py 'fsi sanctioned rule as per udcpr'")
-        print("   → python cli.py 'latest AI news 2026'")
-        print("   → python cli.py 'python programming tutorial'")
-        print("\n📝 Smart Search Examples:")
-        print("   → python cli.py --smart 'Pune best investment areas'")
-        print("   → python cli.py --smart 'Wakad vs Baner property'")
+        print("\nðŸ“ Direct Search Examples:")
+        print("   â†’ python cli.py 'fsi sanctioned rule as per udcpr'")
+        print("   â†’ python cli.py 'latest AI news 2026'")
+        print("   â†’ python cli.py 'python programming tutorial'")
+        print("\nðŸ“ Smart Search Examples:")
+        print("   â†’ python cli.py --smart 'Pune best investment areas'")
+        print("   â†’ python cli.py --smart 'Wakad vs Baner property'")
         print("=" * 70)
     
     # Interactive mode
@@ -772,13 +772,13 @@ EXAMPLES:
         print("\nCommands: /news <query>, /direct <query>, /smart <query>, /exit\n")
         while True:
             try:
-                user_input = input("🔍 Search: ").strip()
+                user_input = input("ðŸ” Search: ").strip()
                 
                 if not user_input:
                     continue
                 
                 if user_input.lower() in ['/exit', 'exit', 'quit']:
-                    print("\n👋 Goodbye!")
+                    print("\nðŸ‘‹ Goodbye!")
                     break
                 
                 if user_input.lower().startswith('/news'):
@@ -786,13 +786,13 @@ EXAMPLES:
                     if query:
                         searcher = DuckDuckGoSearcher()
                         results = searcher.search_news(query, args.max_results)
-                        print(f"\n📰 Found {len(results)} news results for: '{query}'")
+                        print(f"\nðŸ“° Found {len(results)} news results for: '{query}'")
                         for i, r in enumerate(results, 1):
                             print(f"{i}. {r.title}")
                             print(f"   {r.snippet[:200]}...")
-                            print(f"   🔗 {r.url}\n")
+                            print(f"   ðŸ”— {r.url}\n")
                     else:
-                        print("❌ Please provide a search query")
+                        print("âŒ Please provide a search query")
                 elif user_input.lower().startswith('/direct'):
                     query = user_input[7:].strip()
                     if query:
@@ -800,7 +800,7 @@ EXAMPLES:
                         result = cli.search_direct(query, args.max_results)
                         format_direct_results(result)
                     else:
-                        print("❌ Please provide a search query")
+                        print("âŒ Please provide a search query")
                 elif user_input.lower().startswith('/smart'):
                     query = user_input[6:].strip()
                     if query:
@@ -808,37 +808,37 @@ EXAMPLES:
                         result = cli.search(query, args.max_results)
                         cli.format_results(result)
                     else:
-                        print("❌ Please provide a search query")
+                        print("âŒ Please provide a search query")
                 elif user_input.lower().startswith('/extract'):
                     # Syntax: /extract https://example.com what is the title?
                     parts = user_input[8:].strip().split(' ', 1)
                     if len(parts) == 2:
                         url, query = parts
-                        print(f"\n⏳ Extracting from {url}...")
+                        print(f"\nâ³ Extracting from {url}...")
                         from agents.UI_dashboard.main import DuckDuckGoSearchAgent
                         agent = DuckDuckGoSearchAgent()
                         result = agent.extract_from_url(url, query)
                         
                         if result.get('success'):
                             print(f"\n{'='*70}")
-                            print(f"📄 EXTRACTED DATA FROM URL")
+                            print(f"ðŸ“„ EXTRACTED DATA FROM URL")
                             print(f"{'='*70}")
-                            print(f"🔗 URL: {result['url']}")
-                            print(f"📌 Title: {result.get('title', 'Unknown')}")
-                            print(f"❓ Query: {result['query']}")
+                            print(f"ðŸ”— URL: {result['url']}")
+                            print(f"ðŸ“Œ Title: {result.get('title', 'Unknown')}")
+                            print(f"â“ Query: {result['query']}")
                             print(f"{'-'*70}")
-                            print(f"📋 ANSWER:\n{result.get('extracted_data', '')}")
+                            print(f"ðŸ“‹ ANSWER:\n{result.get('extracted_data', '')}")
                             
                             if result.get('token_usage'):
                                 usage = result['token_usage']
                                 print(f"{'-'*70}")
-                                print(f"🔢 Total tokens: {usage['total_tokens']}")
-                                print(f"💰 Est. cost: ${usage.get('total_cost', 0):.6f}")
+                                print(f"ðŸ”¢ Total tokens: {usage['total_tokens']}")
+                                print(f"ðŸ’° Est. cost: ${usage.get('total_cost', 0):.6f}")
                             print(f"{'='*70}\n")
                         else:
-                            print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
+                            print(f"\nâŒ Error: {result.get('error', 'Unknown error')}")
                     else:
-                        print("❌ Please provide both URL and query. Example: /extract https://example.com what is this?")
+                        print("âŒ Please provide both URL and query. Example: /extract https://example.com what is this?")
                 else:
                     # Use default mode (direct)
                     cli = DirectSearchAgent()
@@ -846,7 +846,7 @@ EXAMPLES:
                     format_direct_results(result)
                     
             except KeyboardInterrupt:
-                print("\n\n👋 Goodbye!")
+                print("\n\nðŸ‘‹ Goodbye!")
                 break
         return
     
@@ -856,11 +856,11 @@ EXAMPLES:
     if args.news:
         searcher = DuckDuckGoSearcher()
         results = searcher.search_news(query, args.max_results)
-        print(f"\n📰 Found {len(results)} news results for: '{query}'")
+        print(f"\nðŸ“° Found {len(results)} news results for: '{query}'")
         for i, r in enumerate(results, 1):
             print(f"{i}. {r.title}")
             print(f"   {r.snippet[:200]}...")
-            print(f"   🔗 {r.url}\n")
+            print(f"   ðŸ”— {r.url}\n")
     else:
         # Default to direct search
         result = cli.search_direct(query, args.max_results)
@@ -870,43 +870,43 @@ EXAMPLES:
 def format_direct_results(result: dict):
     """Format and display direct search results"""
     if not result['success']:
-        print(f"\n❌ {result.get('error', 'No results found')}")
+        print(f"\nâŒ {result.get('error', 'No results found')}")
         return
     
     print(f"\n{'='*70}")
-    print(f"🎯 DIRECT SEARCH RESULTS")
+    print(f"ðŸŽ¯ DIRECT SEARCH RESULTS")
     print(f"{'='*70}")
-    print(f"📌 Query: {result['query']}")
-    print(f"📈 Found: {result['results_count']} results")
+    print(f"ðŸ“Œ Query: {result['query']}")
+    print(f"ðŸ“ˆ Found: {result['results_count']} results")
     
     # Show token usage if available
     if result.get('answer'):
-        print(f"✅ LLM Answer provided")
+        print(f"âœ… LLM Answer provided")
 
     if result.get('token_usage'):
         usage = result['token_usage']
-        print(f"🔢 Input tokens: {usage['input_tokens']}")
-        print(f"🔢 Output tokens: {usage['output_tokens']}")
-        print(f"🔢 Total tokens: {usage['total_tokens']}")
-        print(f"💰 Est. cost: ${usage['estimated_cost']:.6f}")
+        print(f"ðŸ”¢ Input tokens: {usage['input_tokens']}")
+        print(f"ðŸ”¢ Output tokens: {usage['output_tokens']}")
+        print(f"ðŸ”¢ Total tokens: {usage['total_tokens']}")
+        print(f"ðŸ’° Est. cost: ${usage['estimated_cost']:.6f}")
 
     if result.get('discovery'):
         discovery = result['discovery']
-        print(f"🧭 Intent: {discovery.get('intent', 'research')}")
-        print(f"🔑 Key entities: {', '.join(discovery.get('key_entities', [])) or 'None'}")
+        print(f"ðŸ§­ Intent: {discovery.get('intent', 'research')}")
+        print(f"ðŸ”‘ Key entities: {', '.join(discovery.get('key_entities', [])) or 'None'}")
     
     print(f"{'='*70}\n")
     
     # Show LLM answer if available
     if result.get('answer'):
-        print("📋 ANSWER:")
+        print("ðŸ“‹ ANSWER:")
         print("-" * 70)
         print(result['answer'])
         print("-" * 70)
         print()
     
     # Show search results
-    print("📄 SEARCH RESULTS:")
+    print("ðŸ“„ SEARCH RESULTS:")
     print("-" * 70)
     for i, res in enumerate(result['results'], 1):
         title = res.get('title', 'No title')
@@ -917,14 +917,14 @@ def format_direct_results(result: dict):
         if len(snippet) > 200:
             snippet = snippet[:200] + "..."
         
-        print(f"{i}. 📌 {title}")
-        print(f"   📝 {snippet}")
+        print(f"{i}. ðŸ“Œ {title}")
+        print(f"   ðŸ“ {snippet}")
         if res.get('relevance_score') is not None:
-            print(f"   ⭐ Relevance: {res.get('relevance_score')}")
+            print(f"   â­ Relevance: {res.get('relevance_score')}")
         if url:
-            print(f"   🔗 {url}")
+            print(f"   ðŸ”— {url}")
         else:
-            print("   🔗 No source URL returned")
+            print("   ðŸ”— No source URL returned")
         print()
     
     print(f"{'='*70}\n")

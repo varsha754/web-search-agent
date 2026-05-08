@@ -1,19 +1,19 @@
-import sys
+﻿import sys
 
 with open('api.py', 'r', encoding='utf-8') as f:
     content = f.read()
 
-target_html = '''        <h1>🦆 DuckDuckGo Search Agent</h1>
+target_html = '''        <h1>ðŸ¦† DuckDuckGo Search Agent</h1>
         <form id="searchForm">
             <input type="text" id="query" placeholder="Enter your search query..." required>
             <button type="submit">Search</button>
         </form>
         <div id="results"></div>'''
 
-new_html = '''        <h1>🦆 DuckDuckGo Search Agent</h1>
+new_html = '''        <h1>ðŸ¦† DuckDuckGo Search Agent</h1>
         
         <div style="margin-bottom: 30px; padding: 20px; background: #f9f9f9; border-radius: 8px;">
-            <h3>🔍 Web Search</h3>
+            <h3>ðŸ” Web Search</h3>
             <form id="searchForm">
                 <input type="text" id="query" placeholder="Enter your search query..." required style="width: 70%;">
                 <button type="submit">Search</button>
@@ -21,7 +21,7 @@ new_html = '''        <h1>🦆 DuckDuckGo Search Agent</h1>
         </div>
 
         <div style="margin-bottom: 30px; padding: 20px; background: #f0f7ff; border-radius: 8px;">
-            <h3>📄 Extract from URL</h3>
+            <h3>ðŸ“„ Extract from URL</h3>
             <p style="font-size: 14px; color: #666;">Extract specific information from a given URL exactly as requested.</p>
             <form id="extractForm">
                 <input type="url" id="extractUrl" placeholder="Enter URL (https://...)" required style="width: 30%;"><br>
@@ -49,7 +49,7 @@ new_script = '''        <script>
                     
                     if (data.success) {
                         let html = `<div class="analysis">
-                            <strong>📄 Extracted Data from: </strong> <a href="${data.url}" target="_blank">${data.title || data.url}</a><br><br>
+                            <strong>ðŸ“„ Extracted Data from: </strong> <a href="${data.url}" target="_blank">${data.title || data.url}</a><br><br>
                             <div style="white-space: pre-wrap; font-family: monospace; background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd;">${data.extracted_data}</div>
                         </div>`;
                         

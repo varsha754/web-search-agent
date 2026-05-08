@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 # 1. Patch analyzer.py
 with open("search_agent/analyzer.py", "r", encoding="utf-8") as f:

@@ -12,49 +12,65 @@ from openai import OpenAI
 import tiktoken
 from core.config import config
 
+SYSTEM_PROMPT_NEWS = """
+You are a news aggregator for Maharashtra. Follow these rules STRICTLY:
+
+1. ONLY include news from the last 7 days (today/yesterday prioritized)
+2. For EACH news item, include:
+   - Headline
+   - Publication date (must be recent)
+   - 1-2 sentence summary
+   - Source URL (clickable/plain text)
+3. Group news by category (Crime, Politics, Infrastructure, Health)
+4. If information is older than 7 days, mark as [ARCHIVED] or exclude
+5. Always cite sources using [citation:X] format
+6. If no recent news found, say "No recent news found in last 7 days"
+"""
+
 
 class LightweightAnalyzer:
     """
     Lightweight analyzer using LLM for accurate answers to all query types
     Token usage: 500-2000 tokens per query
     """
-    
+
     def __init__(self):
         self.client = None
         self.encoder = None
-        
+
         if config.USE_LLM and config.OPENAI_API_KEY:
             self.client = OpenAI(api_key=config.OPENAI_API_KEY)
             self.encoder = tiktoken.encoding_for_model("gpt-4o-mini")
-        
+
         self.token_usage = {
             'input_tokens': 0,
             'output_tokens': 0,
             'total_cost': 0.0,
             'query_count': 0
         }
-    
+        self.last_llm_payloads = []
+
     def needs_analysis(self, query: str, results: List) -> bool:
         """Determine if LLM analysis is needed"""
         # Always use LLM for accurate answers when available
         if self.client:
             return True
-        
+
         # Use LLM only for complex queries
         complex_indicators = [
             'compare', 'analysis', 'trend', 'vs', 'versus',
             'highest', 'lowest', 'best', 'worst',
             'why', 'how', 'what is the difference'
         ]
-        
+
         query_lower = query.lower()
-        
+
         # Simple keyword extraction doesn't need LLM
         if len(results) <= 3 and not any(ind in query_lower for ind in complex_indicators):
             return False
-        
+
         return True
-    
+
     def extract_keyword_insights(self, results: List) -> Dict:
         """Extract insights without LLM (0 tokens)"""
         insights = {
@@ -64,54 +80,54 @@ class LightweightAnalyzer:
             'locations': [],
             'entities': []
         }
-        
+
         import re
-        
-        for result in results[:5]:
+
+        for result in results[:10]:
             text = f"{result.get('title', '')} {result.get('snippet', '')}"
-            
+
             # Extract numbers with units
             number_patterns = [
                 r'(\d+(?:,\d+)?)\s*(?:lakh|crore|units|sq\.?ft|%)',
                 r'₹\s*(\d+(?:,\d+)?)\s*(?:lakh|crore)',
                 r'(\d+)\s*(?:BHK|bhk|bedroom)'
             ]
-            
+
             for pattern in number_patterns:
                 matches = re.findall(pattern, text, re.IGNORECASE)
                 insights['numbers'].extend(matches)
-            
+
             # Extract locations (Indian cities)
             cities = ['Baner', 'Wakad', 'Hinjewadi', 'Kothrud', 'Pune', 'Mumbai', 'Bangalore']
             for city in cities:
                 if city.lower() in text.lower():
                     insights['locations'].append(city)
-            
+
             # Extract key sentences (simple)
             sentences = text.split('.')
             for sentence in sentences[:3]:
                 if len(sentence) > 50 and len(sentence) < 200:
                     insights['key_points'].append(sentence.strip())
-        
+
         # Deduplicate
         insights['key_points'] = list(set(insights['key_points']))[:5]
         insights['locations'] = list(set(insights['locations']))
         insights['numbers'] = list(set(insights['numbers']))[:10]
-        
+
         return insights
-    
+
     def analyze_results(self, query: str, results: List[Dict], keyword_insights: Dict = None, stream_callback=None) -> str:
         """Analyze search results using LLM for accurate answers to all query types"""
-        
+
         if not self.client:
             return self._format_without_llm(query, results)
-        
+
         if keyword_insights is None:
             keyword_insights = self.extract_keyword_insights(results)
-        
+
         # Prepare context for LLM
         context = []
-        for i, result in enumerate(results[:5], 1):
+        for i, result in enumerate(results[:10], 1):
             context.append(f"[{i}] {result.get('title', '')[:120]}")
             context.append(f"   URL: {result.get('url', '')}")
             context.append(f"   Relevance score: {result.get('relevance_score', 'unknown')}")
@@ -120,10 +136,10 @@ class LightweightAnalyzer:
                 context.append(f"   Content: {content[:3000]}")
             else:
                 context.append(f"   Snippet: {result.get('snippet', '')[:500]}")
-        
+
         context_str = "\n".join(context)
         query_hint = self._get_query_hint(query)
-        
+
         # Enhanced prompt for accurate answers to all query types
         prompt = f"""Based on the following search results for the query: "{query}"
 
@@ -133,14 +149,14 @@ Query Context:
 Search Results:
 {context_str}
 
-Provide a clear, accurate, and comprehensive answer to the user's query. Extract EXACT data and information from the provided content. 
+Provide a clear, accurate, and comprehensive answer to the user's query. Extract EXACT data and information from the provided content.
 IMPORTANT INSTRUCTIONS:
 1. You MUST use rich Markdown formatting to make your answer visually beautiful and easy to read.
 2. Use bolding (**text**), bullet points, and headers (### Header) where appropriate.
 3. Strategically include relevant emojis (e.g. 🏢, 📊, 👉, 💡, etc.) for different sections or key points, exactly like ChatGPT does!
 4. You MUST include inline citations in your text referencing the sources using their [number].
-5. At the very end of your answer, list a few URLs under a "### 🔗 URLs to Check In Depth:" header so the user can read more."""
-        
+5. At the very end of your answer, list the first 10 URLs under a "### URLs to Check In Depth:" header so the user can read more."""
+
         try:
             if stream_callback:
                 response = self.client.chat.completions.create(
@@ -150,18 +166,18 @@ IMPORTANT INSTRUCTIONS:
                     temperature=0.3,
                     stream=True
                 )
-                
+
                 full_text = ""
                 for chunk in response:
                     if chunk.choices and chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         full_text += content
                         stream_callback(content)
-                        
+
                 # Estimate tokens for streaming mode
                 self.token_usage['input_tokens'] += len(prompt) // 4
                 self.token_usage['output_tokens'] += len(full_text) // 4
-                
+
                 return full_text
             else:
                 response = self.client.chat.completions.create(
@@ -170,18 +186,18 @@ IMPORTANT INSTRUCTIONS:
                     max_tokens=config.MAX_TOKENS * 2,
                     temperature=0.3
                 )
-                
+
                 # Track token usage
                 self.token_usage['input_tokens'] += response.usage.prompt_tokens
                 self.token_usage['output_tokens'] += response.usage.completion_tokens
-                
+
                 # Calculate cost (GPT-4o-mini: $0.150/1M input, $0.600/1M output)
                 input_cost = response.usage.prompt_tokens * 0.00000015
                 output_cost = response.usage.completion_tokens * 0.0000006
                 self.token_usage['total_cost'] += input_cost + output_cost
-                
+
                 return response.choices[0].message.content
-            
+
         except Exception as e:
             print(f"LLM analysis failed: {e}")
             return self._format_without_llm(query, results)
@@ -196,19 +212,19 @@ IMPORTANT INSTRUCTIONS:
         if re.search(r"\budcpr\b", query_lower):
             return "UDCPR means Unified Development Control and Promotion Regulations, usually Maharashtra building rules."
         return "Use the user's wording and source context to resolve any ambiguous acronyms."
-    
+
     def _format_without_llm(self, query: str, results: List[Dict]) -> str:
         """Fallback formatting without LLM (0 tokens)"""
         response = f"Search results for: {query}\n\n"
         response += f"Found {len(results)} results.\n\n"
-        
-        for i, result in enumerate(results[:5], 1):
+
+        for i, result in enumerate(results[:10], 1):
             response += f"{i}. **{result.get('title', 'No title')}**\n"
             response += f"   {result.get('snippet', 'No description')[:200]}\n"
             response += f"   🔗 {result.get('url', '')}\n\n"
-        
+
         return response
-    
+
     def get_token_report(self) -> Dict:
         """Get token usage report"""
         return {
@@ -218,11 +234,25 @@ IMPORTANT INSTRUCTIONS:
             'cost_per_query': round(self.token_usage['total_cost'] / max(1, self.token_usage.get('query_count', 1)), 6)
         }
 
-    def generate_trusted_answer(self, query: str, results: List[Dict], validator, intent: str = None, stream_callback=None) -> Dict:
+    def generate_trusted_answer(
+        self,
+        query: str,
+        results: List[Dict],
+        validator,
+        intent: str = None,
+        stream_callback=None,
+        debug_llm_payloads: bool = False,
+    ) -> Dict:
         """Generate a trusted answer with validation stats"""
         try:
+            self.last_llm_payloads = []
             if not results:
-                msg = "I'm sorry, but I couldn't find any specific real estate projects for your query at the moment. This might be because search providers are currently rate-limiting my requests, or no projects exactly matching your criteria were found in the top results. Please try again in a few minutes or try a broader search query."
+                is_news = any(kw in query.lower() for kw in ['news', 'latest', 'recent', 'today'])
+                if is_news:
+                    msg = f"I'm sorry, but I couldn't find any recent news updates for '{query}' from the last 7 days. This might be due to search provider rate limits or a lack of new articles matching your criteria. Please try again with a broader query."
+                else:
+                    msg = "I'm sorry, but I couldn't find any specific results for your query at the moment. This might be because search providers are currently rate-limiting my requests. Please try again in a few minutes."
+
                 if stream_callback: stream_callback(msg)
                 return {
                     'answer': msg,
@@ -236,16 +266,20 @@ IMPORTANT INSTRUCTIONS:
             # First validate findings
             extracted_objects = [r.get('extracted_data') for r in results if r.get('extracted_data')]
             validation = validator.cross_validate(extracted_objects, query)
-            
+
             # Prepare context with validation info
             prompt = self._build_accuracy_prompt(query, results, validation, intent)
-            
+
             # Get LLM answer
             if stream_callback:
-                answer = self._get_llm_answer_with_confidence_stream(prompt, stream_callback)
+                answer = self._get_llm_answer_with_confidence_stream(
+                    prompt,
+                    stream_callback,
+                    debug_llm_payloads=debug_llm_payloads,
+                )
             else:
-                answer = self._get_llm_answer_with_confidence(prompt)
-                
+                answer = self._get_llm_answer_with_confidence(prompt, debug_llm_payloads=debug_llm_payloads)
+
             # Post-process for real estate queries
             if intent == "construction_status" or "project" in query.lower():
                 answer = self.validate_real_estate_content(answer, query)
@@ -271,10 +305,10 @@ IMPORTANT INSTRUCTIONS:
 
     def _build_accuracy_prompt(self, query: str, results: List[Dict], validation: Dict, intent: str = None) -> str:
         source_context = []
-        for i, r in enumerate(results[:5], 1):
+        for i, r in enumerate(results[:10], 1):
             content = r.get('content') or r.get('snippet') or "No content available."
             source_context.append(f"[{i}] {r.get('title')}\nURL: {r.get('url')}\nTrust Score: {r.get('source_trust', 0.5)*100:.0f}%\nContent: {content[:5000]}")
-            
+
         validated_str = "\n".join([f"- {c['claim']} (Verified by {c['source_count']} sources)" for c in validation.get('validated_claims', [])])
         sources_str = "\n\n".join(source_context)
 
@@ -289,14 +323,14 @@ IMPORTANT INSTRUCTIONS:
                     location = loc
                     break
 
-            return f"""You are a real estate market analyst specializing in Pune property market.
+            return f"""You are a real estate market analyst.
 
 ## CRITICAL RULES - STRICTLY FOLLOW:
 
 1. **ONLY** provide information about REAL ESTATE PROJECTS (residential/commercial flats, apartments, villas, plots)
 2. **NEVER** mention tourist attractions, restaurants, hotels, or places to visit
 3. **NEVER** use Tripadvisor, travel sites, or tourism sources
-4. **ALWAYS** prioritize RERA registered projects
+4. **ALWAYS** prioritize official registration, developer disclosures, and sources with direct evidence
 5. **ALWAYS** include for each project: name, builder, location, status, possession date
 
 ## User Query: {query}
@@ -332,7 +366,8 @@ CRITICAL INSTRUCTIONS:
 - ONLY list actual residential/commercial projects with their status
 - DO NOT list tourist attractions, restaurants, or entertainment venues
 - IGNORE any "things to do", "shopping", "dining" content
-- ONLY use sources from real estate domains (magicbricks, 99acres, housing, RERA)
+- Use only sources whose retrieved content is actually about real estate projects
+- Prefer official registration records, developer pages, filings, PDFs, or data-rich listings when present
 - For each project, include: name, builder, possession date, total units, current status
 
 CROSS-SOURCE VALIDATION DATA:
@@ -377,17 +412,27 @@ INSTRUCTIONS:
 5. If sources conflict, explicitly mention the contradiction.
 6. Use tables to present numerical data or comparisons.
 7. End with a "Confidence Insight" section.
-8. CRITICAL: At the very end, add a section "### 🔗 Reference URLs" with clickable markdown links [Title](URL).
+8. CRITICAL: At the very end, add a section "### Reference URLs" with clickable markdown links [Title](URL) for the first 10 provided sources. Do not stop at 5 when 10 sources are available.
 
 Answer:"""
 
-    def _get_llm_answer_with_confidence(self, prompt: str) -> str:
+    def _get_llm_answer_with_confidence(self, prompt: str, debug_llm_payloads: bool = False) -> str:
         try:
+            payload = {
+                "model": config.LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": config.MAX_TOKENS * 2,
+                "temperature": 0.2,
+            }
+            if debug_llm_payloads:
+                self.last_llm_payloads.append({
+                    "stage": "final_answer_generation",
+                    "target_file": "backend/agents/UI_dashboard/prompts.py",
+                    "target_function": "LightweightAnalyzer._get_llm_answer_with_confidence",
+                    "payload": payload,
+                })
             response = self.client.chat.completions.create(
-                model=config.LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=config.MAX_TOKENS * 2,
-                temperature=0.2
+                **payload
             )
             self.token_usage['input_tokens'] += response.usage.prompt_tokens
             self.token_usage['output_tokens'] += response.usage.completion_tokens
@@ -396,14 +441,24 @@ Answer:"""
         except Exception as e:
             return f"Error generating answer: {str(e)}"
 
-    def _get_llm_answer_with_confidence_stream(self, prompt: str, stream_callback) -> str:
+    def _get_llm_answer_with_confidence_stream(self, prompt: str, stream_callback, debug_llm_payloads: bool = False) -> str:
         try:
+            payload = {
+                "model": config.LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": config.MAX_TOKENS * 2,
+                "temperature": 0.2,
+                "stream": True,
+            }
+            if debug_llm_payloads:
+                self.last_llm_payloads.append({
+                    "stage": "final_answer_generation_stream",
+                    "target_file": "backend/agents/UI_dashboard/prompts.py",
+                    "target_function": "LightweightAnalyzer._get_llm_answer_with_confidence_stream",
+                    "payload": payload,
+                })
             response = self.client.chat.completions.create(
-                model=config.LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=config.MAX_TOKENS * 2,
-                temperature=0.2,
-                stream=True
+                **payload
             )
             full_text = ""
             for chunk in response:
@@ -411,7 +466,7 @@ Answer:"""
                     c = chunk.choices[0].delta.content
                     full_text += c
                     stream_callback(c)
-            
+
             # Simple estimation for streaming tokens
             self.token_usage['input_tokens'] += len(prompt) // 4
             self.token_usage['output_tokens'] += len(full_text) // 4
@@ -433,7 +488,7 @@ Answer:"""
 # Example usage
 if __name__ == "__main__":
     analyzer = LightweightAnalyzer()
-    
+
     sample_results = [
         {
             'title': '2BHK Flats in Baner - 100+ Properties Available',
@@ -441,7 +496,7 @@ if __name__ == "__main__":
             'url': 'https://example.com/baner-2bhk'
         }
     ]
-    
+
     analysis = analyzer.analyze_results("2BHK supply in Baner", sample_results)
     print(analysis)
     print(f"\nToken usage: {analyzer.get_token_report()}")
@@ -528,11 +583,14 @@ class EnhancedAnalyzer:
         snippet = result.get('snippet', '').lower()
         current_year = datetime.now().year
 
-        authoritative_domains = [
-            '.gov.in', '.nic.in', 'wikipedia.org', 'timesofindia', 'economictimes',
-            'moneycontrol', 'rera', 'maharera', 'igrmaharashtra'
-        ]
-        if any(domain in url for domain in authoritative_domains):
+        is_official_or_institutional = (
+            '.gov' in url
+            or '.nic.in' in url
+            or '.edu' in url
+            or '.ac.in' in url
+            or any(word in title or word in snippet or word in url for word in ['official', 'registration', 'regulatory', 'authority'])
+        )
+        if is_official_or_institutional:
             score += 30
 
         if str(current_year) in snippet or str(current_year) in title:
@@ -555,7 +613,7 @@ class EnhancedAnalyzer:
             'score': score,
             'level': 'High' if score >= 70 else 'Medium' if score >= 40 else 'Low',
             'factors': {
-                'authority': 'Good' if '.gov' in url or 'wikipedia' in url or 'rera' in url else 'Decent',
+                'authority': 'Good' if is_official_or_institutional else 'Decent',
                 'recency': 'Current' if str(current_year) in snippet or str(current_year) in title else 'Unknown',
                 'data_richness': 'Good' if re.search(r'\d+', snippet) else 'Limited',
             },
@@ -579,7 +637,7 @@ class EnhancedAnalyzer:
         consistency = self.validate_consistency(facts)
 
         source_scores = []
-        for result in results[:5]:
+        for result in results[:10]:
             trust_score = self.generate_trust_score(result, query)
             source_scores.append({
                 'url': result.get('url'),
@@ -618,7 +676,7 @@ class EnhancedAnalyzer:
     ) -> str:
         """Generate answer using LLM with confidence indicators."""
         context = []
-        for i, result in enumerate(results[:5], 1):
+        for i, result in enumerate(results[:10], 1):
             source_score = next((s for s in source_scores if s['url'] == result.get('url')), {})
             trust = source_score.get('trust_level', 'Unknown')
             context.append(
@@ -671,7 +729,7 @@ Answer:"""
     def _generate_basic_answer(self, query: str, results: List[Dict]) -> str:
         """Fallback answer generation without LLM."""
         answer = f"Based on {len(results)} sources for '{query}':\n\n"
-        for i, result in enumerate(results[:3], 1):
+        for i, result in enumerate(results[:10], 1):
             answer += f"{i}. {result.get('title', '')}\n"
             answer += f"   {result.get('snippet', '')[:180]}...\n"
             answer += f"   Source: {result.get('url', '')}\n\n"
@@ -684,15 +742,15 @@ Answer:"""
             'restaurant', 'cafe', 'heritage walk', 'food tour', 'sightseeing',
             'tripadvisor', 'make my trip', 'places to visit', 'weekend getaway'
         ]
-        
+
         query_lower = query.lower()
         analysis_lower = analysis.lower()
-        
+
         # If query is about real estate but response has tourism content
         if any(kw in query_lower for kw in ['project', 'flat', 'apartment', 'property', 'real estate']):
             if any(indicator in analysis_lower for indicator in tourism_indicators):
                 return self._generate_replacement_response(query)
-        
+
         return analysis
 
     def _generate_replacement_response(self, query: str) -> str:
@@ -706,22 +764,12 @@ I apologize for the previous response. You asked about **real estate projects**,
 
 **For accurate real estate project information in Pune:**
 
-1. **Official Sources:**
-   - MahaRERA Website: https://maharera.mahaonline.gov.in
-   - PMAY (Pradhan Mantri Awas Yojana): https://pmaymis.gov.in
-
-2. **Recommended Real Estate Portals:**
-   - Magicbricks.com
-   - 99acres.com
-   - Housing.com
-
-3. **For your specific query:**
-   - Check RERA registered projects with completion date in 2025/2026
-   - New project announcements typically happen in Q3-Q4 of previous year
-   - Contact local real estate consultants for upcoming launches
+1. Check official registration records, builder disclosures, project brochures, and recent data-rich listings.
+2. Compare project names, builders, possession dates, registration numbers, and pricing across multiple sources.
+3. Treat unsourced claims, thin snippets, and tourism/travel pages as low-confidence for this query.
 
 ### 💡 Try these specific searches:
-- "MahaRERA registered projects Pune 2026"
+- "registered residential projects Pune 2026"
 - "New residential launches Wakad Baner Hinjewadi"
 - "Upcoming housing projects with possession in 2026"
 

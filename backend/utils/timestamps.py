@@ -1,4 +1,4 @@
-"""
+﻿"""
 Timestamp extraction and formatting utilities.
 Extracts publication dates from HTML and formats them as relative time strings.
 """

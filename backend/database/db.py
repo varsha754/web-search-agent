@@ -1,4 +1,4 @@
-"""
+﻿"""
 Caching system - reduces duplicate searches
 Token savings: 90%+ for repeated queries
 """

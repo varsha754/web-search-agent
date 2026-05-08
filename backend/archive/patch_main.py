@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import datetime
 
 with open('main.py', 'r', encoding='utf-8') as f:

@@ -23,24 +23,6 @@ class ContentProcessor:
     Multi-strategy content extractor with confidence scoring and high accuracy.
     """
     
-    # Trusted domain patterns
-    TRUSTED_DOMAINS = {
-        "timesofindia.indiatimes.com": 0.95,
-        "thehindu.com": 0.94,
-        "indianexpress.com": 0.93,
-        "bbc.com": 0.98,
-        "reuters.com": 0.97,
-        "apnews.com": 0.96,
-        "economictimes.com": 0.92,
-        "moneycontrol.com": 0.88,
-        "magicbricks.com": 0.85,
-        "99acres.com": 0.85,
-        "housing.com": 0.82,
-        "wikipedia.org": 0.95,
-        "gov.in": 0.98,
-        "maharashtra.gov.in": 0.97,
-    }
-    
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
@@ -226,7 +208,7 @@ class ContentProcessor:
 
     def _extract_numbers(self, content: str) -> List[Dict]:
         patterns = [
-            (r'₹?\s*(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|crore|thousand|million)', 'currency'),
+            (r'â‚¹?\s*(\d+(?:,\d+)*(?:\.\d+)?)\s*(lakh|crore|thousand|million)', 'currency'),
             (r'(\d+(?:,\d+)?)\s*(sq\.?ft|sq\.?m|square feet)', 'area'),
             (r'(\d+)\s*(?:BHK|bhk|bedroom)', 'bhk'),
             (r'(\d+(?:\.\d+)?)%', 'percentage'),
@@ -285,14 +267,40 @@ class ContentProcessor:
 
     def _calculate_confidence(self, data: ExtractedData, url: str, query: str) -> float:
         score = {'json-ld': 30, 'trafilatura': 26, 'readability': 24, 'beautifulsoup': 20}.get(data.extraction_method.split('+')[-1], 15)
-        domain = urlparse(url).netloc.replace('www.', '')
-        trust = self.TRUSTED_DOMAINS.get(domain, 0.5) * 25
-        data.source_trust = trust / 25
+        source_trust = self._infer_source_trust(data, url, query)
+        trust = source_trust * 25
+        data.source_trust = source_trust
         score += trust
         score += 20 if data.word_count > 500 else (15 if data.word_count > 200 else 5)
         if data.has_structured_data: score += 10
         score += min(len(data.key_facts) * 3, 15)
         return min(score, 100)
+
+    def _infer_source_trust(self, data: ExtractedData, url: str, query: str) -> float:
+        """Estimate source quality from generic signals instead of named websites."""
+        domain = urlparse(url).netloc.lower().replace('www.', '')
+        path = urlparse(url).path.lower()
+        score = 0.5
+
+        if domain.endswith(('.gov', '.gov.in', '.nic.in')) or '.gov.' in domain:
+            score += 0.25
+        if domain.endswith('.edu') or '.edu.' in domain or domain.endswith('.ac.in'):
+            score += 0.15
+        if data.has_structured_data:
+            score += 0.10
+        if data.word_count >= 500:
+            score += 0.10
+        elif data.word_count >= 200:
+            score += 0.05
+        if path.endswith('.pdf'):
+            score += 0.05
+        if query:
+            query_words = {word.lower() for word in query.split() if len(word) > 2}
+            content = data.main_content.lower()
+            if query_words:
+                matched = sum(1 for word in query_words if word in content)
+                score += min((matched / len(query_words)) * 0.15, 0.15)
+        return min(max(score, 0.25), 1.0)
 
     def process_batch(self, urls: List[str], query: str = "", delay: float = 1.0) -> List[Dict]:
         results = []

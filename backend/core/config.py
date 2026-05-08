@@ -1,4 +1,4 @@
-import os
+﻿import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,7 +30,7 @@ class Config:
     
     # Response format
     DEFAULT_FORMAT = os.getenv("DEFAULT_FORMAT", "markdown")  # markdown, json, text
-    MAX_RESULTS_IN_RESPONSE = int(os.getenv("MAX_RESULTS_IN_RESPONSE", 5))
+    MAX_RESULTS_IN_RESPONSE = int(os.getenv("MAX_RESULTS_IN_RESPONSE", 10))
     
     # Web interface (optional)
     API_HOST = os.getenv("API_HOST", "0.0.0.0")

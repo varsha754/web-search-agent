@@ -2,6 +2,15 @@
 FastAPI web interface for the search agent
 """
 
+import sys
+import os
+
+# Fix for Windows console encoding issues (removes 'charmap' errors with emojis/special chars)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,29 +69,32 @@ async def root():
             button { position: absolute; right: 10px; top: 10px; bottom: 10px; background: #19c37d; color: white; border: none; border-radius: 8px; padding: 0 15px; cursor: pointer; font-weight: bold; }
             button:hover { background: #1a8859; }
             .status-update { color: #8e8ea0; font-size: 14px; font-style: italic; margin-bottom: 10px; display: flex; align-items: center; }
-            .status-update::before { content: "🔄"; display: inline-block; margin-right: 8px; animation: spin 2s linear infinite; }
+            .status-update::before { content: "ðŸ”„"; display: inline-block; margin-right: 8px; animation: spin 2s linear infinite; }
             @keyframes spin { 100% { transform: rotate(360deg); } }
-            
+
             /* Markdown Styling */
             .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: #ececf1; margin-top: 20px; margin-bottom: 10px; }
             .markdown-content p { margin-bottom: 15px; }
             .markdown-content a { color: #10a37f; }
             .markdown-content ul, .markdown-content ol { padding-left: 20px; margin-bottom: 15px; }
             .markdown-content strong { color: #fff; }
-            
+
             /* Sources Styling */
             .sources-box { margin-top: 30px; background: #343541; border: 1px solid #4d4d4f; border-radius: 8px; padding: 15px; }
             .source-item { margin-bottom: 10px; }
             .source-item a { color: #19c37d; text-decoration: none; font-weight: 500; }
             .source-item a:hover { text-decoration: underline; }
             .source-item .url { font-size: 12px; color: #8e8ea0; }
+            .token-badge { font-size: 11px; background: #2d2d31; border: 1px solid #4d4d4f; color: #8e8ea0; padding: 4px 10px; border-radius: 20px; display: inline-flex; align-items: center; margin-top: 15px; }
+            .token-badge span { margin-right: 12px; }
+            .token-badge b { color: #19c37d; margin-left: 4px; }
             .blinking-cursor { display: inline-block; width: 8px; height: 16px; background: #ececf1; animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 4px; }
             @keyframes blink { 50% { opacity: 0; } }
         </style>
     </head>
     <body>
-        <div class="header">🦆 Search & Extract Agent</div>
-        
+        <div class="header">ðŸ¦† Search & Extract Agent</div>
+
         <div class="chat-container" id="chatContainer">
             <div class="message assistant">
                 <div class="message-content">
@@ -90,19 +102,19 @@ async def root():
                 </div>
             </div>
         </div>
-        
+
         <div class="input-container">
             <form id="searchForm">
                 <input type="text" id="query" placeholder="Send a message..." required autocomplete="off">
                 <button type="submit">Send</button>
             </form>
         </div>
-        
+
         <script>
             const chatContainer = document.getElementById('chatContainer');
             const searchForm = document.getElementById('searchForm');
             const queryInput = document.getElementById('query');
-            
+
             const parseMarkdown = (text) => {
                 if (typeof marked !== 'undefined') {
                     try {
@@ -113,7 +125,7 @@ async def root():
                 }
                 return `<pre style="white-space: pre-wrap; font-family: inherit;">${text}</pre>`;
             };
-            
+
             function appendMessage(role, contentHtml, id = null) {
                 const msgDiv = document.createElement('div');
                 msgDiv.className = `message ${role}`;
@@ -128,51 +140,51 @@ async def root():
                 e.preventDefault();
                 const query = queryInput.value.trim();
                 if (!query) return;
-                
+
                 // Add user message
                 appendMessage('user', `<p>${query}</p>`);
                 queryInput.value = '';
-                
+
                 // Create assistant message placeholder
                 const msgId = 'msg-' + Date.now();
-                const assistantMsg = appendMessage('assistant', 
+                const assistantMsg = appendMessage('assistant',
                     `<div id="${msgId}-status" class="status-update">Starting agent...</div>
                      <div id="${msgId}-content" class="markdown-content"></div>
                      <span id="${msgId}-cursor" class="blinking-cursor"></span>
-                     <div id="${msgId}-sources"></div>`, 
+                     <div id="${msgId}-sources"></div>`,
                     msgId
                 );
-                
+
                 const statusDiv = document.getElementById(`${msgId}-status`);
                 const contentDiv = document.getElementById(`${msgId}-content`);
                 const cursorSpan = document.getElementById(`${msgId}-cursor`);
                 const sourcesDiv = document.getElementById(`${msgId}-sources`);
-                
+
                 let fullText = '';
-                
+
                 try {
                     const response = await fetch(`/api/chat_stream?query=${encodeURIComponent(query)}&no_cache=true`);
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder('utf-8');
-                    
+
                     let buffer = '';
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
-                        
+
                         buffer += decoder.decode(value, { stream: true });
-                        
+
                         let boundary = buffer.indexOf('\n\n');
                         while (boundary !== -1) {
                             const message = buffer.slice(0, boundary);
                             buffer = buffer.slice(boundary + 2);
-                            
+
                             const lines = message.split('\n');
                             for (const line of lines) {
                                 if (line.startsWith('data: ')) {
                                 try {
                                     const data = JSON.parse(line.slice(6));
-                                    
+
                                     if (data.type === 'status') {
                                         statusDiv.innerHTML = data.content;
                                     } else if (data.type === 'chunk') {
@@ -185,21 +197,21 @@ async def root():
                                     } else if (data.type === 'done') {
                                         cursorSpan.style.display = 'none';
                                         statusDiv.style.display = 'none';
-                                        
+
                                         if (data.result.success === false) {
-                                            contentDiv.innerHTML = '❌ Agent Error: ' + (data.result.error || 'No results found');
+                                            contentDiv.innerHTML = 'âŒ Agent Error: ' + (data.result.error || 'No results found');
                                             contentDiv.style.color = '#ef4444';
                                             return;
                                         }
-                                        
+
                                         // Sometimes result is cached, so it has data.result.analysis
                                         if (data.result.analysis && !fullText) {
                                             contentDiv.innerHTML = parseMarkdown(data.result.analysis);
                                         }
-                                        
+
                                         if (data.result.results && data.result.results.length > 0) {
-                                            let sourcesHtml = '<div class="sources-box"><h4>📄 Sources Read</h4>';
-                                            for (const r of data.result.results.slice(0, 3)) {
+                                            let sourcesHtml = '<div class="sources-box"><h4>ðŸ“„ Sources Read</h4>';
+                                            for (const r of data.result.results.slice(0, 10)) {
                                                 sourcesHtml += `
                                                     <div class="source-item">
                                                         <a href="${r.url}" target="_blank">${r.title}</a><br>
@@ -207,13 +219,29 @@ async def root():
                                                     </div>
                                                 `;
                                             }
+
+                                            // Add Token Usage Info
+                                            const tu = data.result.token_usage || {};
+                                            const du = data.result.discovery_token_usage || {};
+                                            const totalIn = (tu.input_tokens || 0) + (du.input_tokens || 0);
+                                            const totalOut = (tu.output_tokens || 0) + (du.output_tokens || 0);
+                                            const totalCost = (tu.total_cost || 0) + (du.total_cost || 0);
+
+                                            sourcesHtml += `
+                                                <div class="token-badge">
+                                                    <span>In: <b>${totalIn}</b></span>
+                                                    <span>Out: <b>${totalOut}</b></span>
+                                                    <span>Cost: <b>$${totalCost.toFixed(4)}</b></span>
+                                                </div>
+                                            `;
+
                                             sourcesHtml += '</div>';
                                             sourcesDiv.innerHTML = sourcesHtml;
                                         }
                                         chatContainer.scrollTop = chatContainer.scrollHeight;
                                     } else if (data.type === 'error') {
                                         cursorSpan.style.display = 'none';
-                                        statusDiv.innerHTML = '❌ Error: ' + data.content;
+                                        statusDiv.innerHTML = 'âŒ Error: ' + data.content;
                                         statusDiv.style.color = '#ef4444';
                                         statusDiv.style.animation = 'none';
                                         statusDiv.className = '';
@@ -230,7 +258,7 @@ async def root():
                 alert("Critical UI Error: " + error.message);
                 if (cursorSpan) cursorSpan.style.display = 'none';
                 if (statusDiv) {
-                    statusDiv.innerHTML = '❌ Network Error: ' + error.message;
+                    statusDiv.innerHTML = 'âŒ Network Error: ' + error.message;
                     statusDiv.style.color = '#ef4444';
                     statusDiv.className = '';
                 }
@@ -281,25 +309,26 @@ async def health():
 
 
 @app.get("/api/chat_stream")
-async def chat_stream(query: str = Query(..., min_length=1), no_cache: bool = False):
+async def chat_stream(query: str = Query(..., min_length=1), no_cache: bool = False, debug: bool = False):
     async def event_generator():
         queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
-        
+
         def status_callback(msg):
             loop.call_soon_threadsafe(queue.put_nowait, {'type': 'status', 'content': msg})
-            
+
         def stream_callback(msg):
             loop.call_soon_threadsafe(queue.put_nowait, {'type': 'chunk', 'content': msg})
-            
+
         def run_search():
             try:
                 result = agent.search(
-                    query, 
-                    max_results=config.MAX_RESULTS_IN_RESPONSE, 
+                    query,
+                    max_results=config.MAX_RESULTS_IN_RESPONSE,
                     use_cache=not no_cache,
                     status_callback=status_callback,
-                    stream_callback=stream_callback
+                    stream_callback=stream_callback,
+                    debug_llm_payloads=debug
                 )
                 loop.call_soon_threadsafe(queue.put_nowait, {'type': 'done', 'result': result})
             except Exception as e:
@@ -307,13 +336,17 @@ async def chat_stream(query: str = Query(..., min_length=1), no_cache: bool = Fa
 
         thread = threading.Thread(target=run_search)
         thread.start()
-        
-        while True:
-            item = await queue.get()
-            yield f"data: {json.dumps(item)}\n\n"
-            if item['type'] in ['done', 'error']:
-                break
-                
+
+        try:
+            while True:
+                item = await queue.get()
+                yield f"data: {json.dumps(item)}\n\n"
+                if item['type'] in ['done', 'error']:
+                    break
+        except asyncio.CancelledError:
+            # Handle client disconnect
+            pass
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 

@@ -8,9 +8,9 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   status?: string;
-  sources?: { 
-    url: string; 
-    title: string; 
+  sources?: {
+    url: string;
+    title: string;
     time_ago?: string;
     trust_score?: number;
     verification_status?: string;
@@ -23,6 +23,12 @@ type Message = {
   };
   isStreaming?: boolean;
   generatedAt?: string;
+  tokenUsage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    total_cost: number;
+  };
 };
 
 export default function Home() {
@@ -66,7 +72,7 @@ export default function Home() {
 
     try {
       const response = await fetch(`http://localhost:8000/api/chat_stream?query=${encodeURIComponent(userMessage.content)}&no_cache=true`);
-      
+
       if (!response.body) throw new Error("No response body");
 
       const reader = response.body.getReader();
@@ -78,16 +84,16 @@ export default function Home() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        
+
         let boundary = buffer.indexOf('\n\n');
         while (boundary !== -1) {
           const chunk = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-          
+
           if (chunk.startsWith('data: ')) {
             try {
               const data = JSON.parse(chunk.slice(6));
-              
+
               setMessages(prev => prev.map(msg => {
                 if (msg.id === assistantMessageId) {
                   if (data.type === 'status') {
@@ -97,26 +103,36 @@ export default function Home() {
                   } else if (data.type === 'error') {
                     return { ...msg, status: '❌ Agent Error: ' + data.content, isStreaming: false };
                   } else if (data.type === 'done') {
-                    const sources = data.result?.results?.slice(0, 4)?.map((r: any) => ({ 
-                      url: r.url, 
-                      title: r.title, 
+                    const sources = data.result?.results?.slice(0, 10)?.map((r: any) => ({
+                      url: r.url,
+                      title: r.title,
                       time_ago: r.time_ago || 'Recently',
                       trust_score: r.source_trust || r.trust_score,
                       verification_status: r.verification_status
                     })) || data.sources || [];
-                    
+
                     const fallbackContent = (!msg.content && data.result?.analysis) ? data.result.analysis : msg.content;
                     const generatedAt = data.result?.timestamp ? new Date(data.result.timestamp).toLocaleString() : new Date().toLocaleString();
                     const accuracy = data.result?.accuracy;
-                    
-                    return { 
-                      ...msg, 
-                      content: fallbackContent, 
-                      sources, 
+
+                    const tu = data.result?.token_usage || {};
+                    const du = data.result?.discovery_token_usage || {};
+                    const tokenUsage = {
+                      input_tokens: (tu.input_tokens || 0) + (du.input_tokens || 0),
+                      output_tokens: (tu.output_tokens || 0) + (du.output_tokens || 0),
+                      total_tokens: (tu.total_tokens || 0) + (du.total_tokens || 0),
+                      total_cost: (tu.total_cost || 0) + (du.total_cost || 0),
+                    };
+
+                    return {
+                      ...msg,
+                      content: fallbackContent,
+                      sources,
                       accuracy,
-                      isStreaming: false, 
-                      status: '', 
-                      generatedAt 
+                      isStreaming: false,
+                      status: '',
+                      generatedAt,
+                      tokenUsage
                     };
                   }
                 }
@@ -130,8 +146,8 @@ export default function Home() {
         }
       }
     } catch (error: any) {
-      setMessages(prev => prev.map(msg => 
-        msg.id === assistantMessageId 
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId
           ? { ...msg, status: '❌ Network Error: ' + error.message, isStreaming: false }
           : msg
       ));
@@ -160,19 +176,19 @@ export default function Home() {
           </div>
         </div>
       </header>
-      
+
       {/* Main Chat Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth">
         <div className="max-w-4xl mx-auto flex flex-col gap-6 pb-4">
           {messages.map((msg) => (
-            <div 
-              key={msg.id} 
+            <div
+              key={msg.id}
               className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4 duration-500`}
             >
-              <div 
+              <div
                 className={`flex flex-col max-w-[90%] sm:max-w-[85%] rounded-2xl p-5 sm:p-6 shadow-xl ${
-                  msg.role === 'user' 
-                    ? 'bg-gradient-to-br from-blue-600 to-cyan-600 text-white rounded-tr-sm border border-blue-500/30 shadow-blue-900/20' 
+                  msg.role === 'user'
+                    ? 'bg-gradient-to-br from-blue-600 to-cyan-600 text-white rounded-tr-sm border border-blue-500/30 shadow-blue-900/20'
                     : 'bg-slate-800/60 backdrop-blur-sm text-slate-200 rounded-tl-sm border border-slate-700/50 shadow-slate-950/50'
                 }`}
               >
@@ -200,8 +216,8 @@ export default function Home() {
                           <span className="text-sm font-semibold text-slate-300">Verified Answer</span>
                           {msg.accuracy && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                              msg.accuracy.accuracy_score >= 90 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                              msg.accuracy.accuracy_score >= 70 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                              msg.accuracy.accuracy_score >= 90 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                              msg.accuracy.accuracy_score >= 70 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                               'bg-red-500/10 text-red-400 border-red-500/20'
                             }`}>
                               {msg.accuracy.confidence_level.split(' - ')[0]}
@@ -210,6 +226,13 @@ export default function Home() {
                         </div>
                       )}
                       <div className="flex items-center gap-2">
+                        {msg.tokenUsage && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded-full border border-slate-700/50">
+                            Tokens: <b className="text-cyan-400">{msg.tokenUsage.total_tokens}</b>
+                            <span className="mx-1 text-slate-700">|</span>
+                            Cost: <b className="text-emerald-400">${msg.tokenUsage.total_cost.toFixed(4)}</b>
+                          </span>
+                        )}
                         {msg.generatedAt && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-900/50 px-2 py-0.5 rounded-full border border-slate-700/50">
                             {msg.generatedAt}
@@ -219,10 +242,10 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                
-                
+
+
                 {/* Message Content */}
-                <div 
+                <div
                   className={`markdown-body ${msg.role === 'user' ? 'text-white' : 'text-slate-200'} prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-slate-900/50 prose-pre:border prose-pre:border-slate-700/50 prose-a:text-cyan-400 hover:prose-a:text-cyan-300`}
                   dangerouslySetInnerHTML={{ __html: parse(msg.content) as string }}
                 />
@@ -243,11 +266,11 @@ export default function Home() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {msg.sources.map((s, i) => (
-                        <a 
+                        <a
                           key={i}
-                          href={s.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="group flex flex-col p-3 rounded-xl bg-slate-900/40 border border-slate-700/50 hover:bg-slate-800/80 hover:border-cyan-500/50 transition-all duration-300"
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
@@ -256,8 +279,8 @@ export default function Home() {
                             </span>
                             {s.trust_score !== undefined && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                                s.trust_score >= 0.9 ? 'bg-emerald-500/20 text-emerald-400' : 
-                                s.trust_score >= 0.8 ? 'bg-cyan-500/20 text-cyan-400' : 
+                                s.trust_score >= 0.9 ? 'bg-emerald-500/20 text-emerald-400' :
+                                s.trust_score >= 0.8 ? 'bg-cyan-500/20 text-cyan-400' :
                                 'bg-slate-700 text-slate-400'
                               }`}>
                                 {(s.trust_score * 100).toFixed(0)}% Trust

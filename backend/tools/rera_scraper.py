@@ -1,4 +1,4 @@
-import requests
+﻿import requests
 from typing import List, Dict, Any
 
 def fetch_rera_projects(location: str, status: str = "under_construction") -> List[Dict[str, Any]]:
