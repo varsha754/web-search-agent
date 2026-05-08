@@ -10,7 +10,7 @@ import sys
 from dataclasses import asdict
 
 from tools.search import DuckDuckGoSearcher
-from tools.intent_entity_extraction.discovery import SourceDiscovery
+from tools.discovery import SourceDiscovery
 from tools.browser import ContentProcessor
 from agents.UI_dashboard.prompts import LightweightAnalyzer
 from agents.UI_dashboard.tools import ResponseFormatter
