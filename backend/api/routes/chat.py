@@ -3,7 +3,7 @@
 import asyncio
 import json
 import threading
-from contextlib import suppress
+import time
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
@@ -13,7 +13,8 @@ from core.config import config
 
 
 router = APIRouter()
-STREAM_IDLE_TIMEOUT_SECONDS = 120
+STREAM_HEARTBEAT_SECONDS = 15
+STREAM_MAX_RUNTIME_SECONDS = 480
 
 
 @router.get("/chat_stream")
@@ -66,24 +67,36 @@ async def chat_stream(
         thread = threading.Thread(target=run_search, daemon=True)
         thread.start()
 
+        started_at = time.monotonic()
+        last_keepalive = started_at
+
         try:
             while True:
-                with suppress(asyncio.TimeoutError):
+                try:
                     item = await asyncio.wait_for(
                         queue.get(),
-                        timeout=STREAM_IDLE_TIMEOUT_SECONDS,
+                        timeout=STREAM_HEARTBEAT_SECONDS,
                     )
                     yield f"data: {json.dumps(item)}\n\n"
                     if item["type"] in {"done", "error"}:
                         break
-                    continue
+                except asyncio.TimeoutError:
+                    now = time.monotonic()
+                    if now - started_at >= STREAM_MAX_RUNTIME_SECONDS:
+                        timeout_item = {
+                            "type": "error",
+                            "content": "Search is taking too long. Please try a narrower query or fewer sources.",
+                        }
+                        yield f"data: {json.dumps(timeout_item)}\n\n"
+                        break
 
-                timeout_item = {
-                    "type": "error",
-                    "content": "Search timed out before the agent returned a result.",
-                }
-                yield f"data: {json.dumps(timeout_item)}\n\n"
-                break
+                    if now - last_keepalive >= STREAM_HEARTBEAT_SECONDS:
+                        keepalive_item = {
+                            "type": "status",
+                            "content": "Still working... reading sources and preparing the answer.",
+                        }
+                        yield f"data: {json.dumps(keepalive_item)}\n\n"
+                        last_keepalive = now
         except asyncio.CancelledError:
             return
 

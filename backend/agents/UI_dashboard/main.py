@@ -93,9 +93,9 @@ class DuckDuckGoSearchAgent:
 
         # Fetch full content if requested
         if fetch_content:
-            urls = [r['url'] for r in search_results[:min(10, len(search_results))]]
+            urls = [r['url'] for r in search_results[:min(5, len(search_results))]]
             if status_callback: status_callback(f'Reading full content from {len(urls)} top sources...')
-            content_results = self.processor.process_batch(urls)
+            content_results = self.processor.process_batch(urls, query=query, status_callback=status_callback)
 
             # Filter and Merge content
             intent = discovery.get("understanding", {}).get("intent")

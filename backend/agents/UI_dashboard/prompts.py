@@ -24,7 +24,7 @@ class LightweightAnalyzer:
         self.encoder = None
 
         if config.USE_LLM and config.OPENAI_API_KEY:
-            self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+            self.client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=45)
             self.encoder = tiktoken.encoding_for_model("gpt-4o-mini")
 
         self.token_usage = {

@@ -195,7 +195,7 @@ class SourceDiscovery:
         if config.USE_LLM and config.OPENAI_API_KEY:
             try:
                 from openai import OpenAI
-                self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+                self.client = OpenAI(api_key=config.OPENAI_API_KEY, timeout=30)
             except Exception as e:
                 print(f"   âš ï¸ LLM query planner not available: {e}")
 

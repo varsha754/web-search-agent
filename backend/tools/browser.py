@@ -302,9 +302,11 @@ class ContentProcessor:
                 score += min((matched / len(query_words)) * 0.15, 0.15)
         return min(max(score, 0.25), 1.0)
 
-    def process_batch(self, urls: List[str], query: str = "", delay: float = 1.0) -> List[Dict]:
+    def process_batch(self, urls: List[str], query: str = "", delay: float = 1.0, status_callback=None) -> List[Dict]:
         results = []
         for i, url in enumerate(urls):
+            if status_callback:
+                status_callback(f"Reading source {i + 1}/{len(urls)}...")
             print(f"  [{i+1}/{len(urls)}] Processing: {url[:60]}...")
             html = self.fetch_html(url)
             if html:
