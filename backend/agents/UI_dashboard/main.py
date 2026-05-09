@@ -3,7 +3,6 @@ DuckDuckGo Web Search Agent - Main Entry Point
 Complete working agent with minimal token usage
 """
 
-import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import sys
@@ -13,7 +12,6 @@ from tools.search import DuckDuckGoSearcher
 from tools.discovery import SourceDiscovery
 from tools.browser import ContentProcessor
 from agents.UI_dashboard.prompts import LightweightAnalyzer
-from agents.UI_dashboard.tools import ResponseFormatter
 from database.db import SearchCache
 from core.config import config
 from utils.validation import AccuracyValidator
@@ -33,7 +31,6 @@ class DuckDuckGoSearchAgent:
         self.discovery = SourceDiscovery(self.searcher)
         self.processor = ContentProcessor()
         self.analyzer = LightweightAnalyzer()
-        self.formatter = ResponseFormatter()
         self.cache = SearchCache() if config.CACHE_ENABLED else None
         self.validator = AccuracyValidator()
 
@@ -208,10 +205,6 @@ class DuckDuckGoSearchAgent:
             self.cache.set(cache_query, output)
 
         return output
-
-    def search_news(self, query: str, max_results: int = 10) -> Dict:
-        """Simple news search wrapper"""
-        return self.search(query, max_results=max_results)
 
     def extract_from_url(self, url: str, query: str) -> Dict:
         """Extract exact data from a given URL"""

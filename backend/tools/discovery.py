@@ -105,11 +105,6 @@ KNOWN_REAL_ESTATE_LOCATIONS = {
     "magarpatta", "kothrud", "pimple", "saudagar", "mahalunge", "ravet",
 }
 
-GENERIC_OFF_TOPIC_TERMS = {
-    "health": ["vaccine", "vaccines", "immunisation", "immunization", "disease", "medicine", "hospital"],
-    "finance_sanctions": ["sanctions list", "financial sanctions", "ofsi", "asset freeze"],
-    "jobs": ["hiring", "salary", "vacancy", "recruitment"],
-}
 
 MIN_RELEVANCE_SCORE = 0.28
 
@@ -337,21 +332,6 @@ class SourceDiscovery:
             "token_usage": self.last_token_usage,
             "llm_debug_payloads": self.last_llm_payloads if debug_llm_payloads else [],
         }
-
-    def build_search_query(self, topic: str, time_filter: str = 'week') -> str:
-        """Add time filters to search queries"""
-        clean_topic = topic.lower()
-        for word in ['latest', 'news', 'updates', 'recent', 'today', 'maharashtra']:
-            clean_topic = clean_topic.replace(word, '')
-        clean_topic = re.sub(r'\s+', ' ', clean_topic).strip()
-        
-        base_query = f"latest {clean_topic} news Maharashtra".replace('  ', ' ')
-        time_operators = {
-            'day': 'after:1 day ago',
-            'week': 'after:7 days ago', 
-            'month': 'after:30 days ago'
-        }
-        return f"{base_query} {time_operators.get(time_filter, '')}"
 
     def filter_relevant_sources(self, results: List[Dict], query: str) -> List[Dict]:
         """Remove off-topic sources using content signals."""
@@ -636,11 +616,6 @@ Return this JSON shape:
             "source": result.source
         }
 
-    def _authority_score(self, domain: str, intent: str, topic_score: float = 0.0) -> float:
-        return 0.5
-
-    def _irrelevant_result_penalty(self, haystack: str, entities: List[str], query: str = "") -> float:
-        return 0.0
 
     def _important_terms(self, text: str) -> List[str]:
         return [
@@ -655,11 +630,3 @@ Return this JSON shape:
         matched = sum(1 for term in terms if term in text.lower())
         return min(matched / len(terms), 1.0)
 
-    def _phrase_score(self, text: str, query: str, search_query: str) -> float:
-        return 0.5
-
-    def _dedupe_terms(self, terms: List[str]) -> List[str]:
-        return list(dict.fromkeys(terms))
-
-    def _contains_term(self, text: str, term: str) -> bool:
-        return term.lower() in text.lower()

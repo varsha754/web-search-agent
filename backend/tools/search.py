@@ -7,7 +7,6 @@ import time
 from typing import List, Optional
 from dataclasses import dataclass
 from core.config import config
-import hashlib
 import random
 import re
 from datetime import datetime, timedelta
@@ -34,82 +33,6 @@ class SearchResult:
     is_recent: bool = False
 
 
-class LLMBasedSearcher:
-    """
-    LLM-based search using OpenAI's web search tool
-    Provides accurate, context-aware search results
-    """
-
-    def __init__(self):
-        self.client = None
-        self.request_delay = 1.0
-
-        # Initialize OpenAI client if API key is available
-        if config.USE_LLM and config.OPENAI_API_KEY:
-            try:
-                from openai import OpenAI
-                self.client = OpenAI(api_key=config.OPENAI_API_KEY)
-            except Exception as e:
-                print(f"   âš ï¸ OpenAI client not available: {e}")
-
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        """
-        Perform LLM-based web search using OpenAI's Chat Completions
-        """
-        print(f"🔍 Searching the web (LLM-powered): '{query}'")
-
-        if not self.client:
-            print("   ⚠️ OpenAI client not available")
-            return []
-
-        try:
-            # Note: GPT-4o in the standard API doesn't always have 'tools' for search
-            # that return raw URLs to the user. We'll use it to synthesize
-            # but for real URLs we rely on the scrapers.
-            # Here we fix the 'responses' error by using chat.completions
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": f"Search for: {query}. Provide a list of relevant links if possible."}],
-                max_tokens=500
-            )
-
-            answer_text = response.choices[0].message.content
-
-            search_results = []
-            if answer_text:
-                # Synthetic result
-                search_results.append(SearchResult(
-                    url="",
-                    title=f"AI Search Insight for: {query}",
-                    snippet=answer_text[:500],
-                    rank=1,
-                    source="llm-insight"
-                ))
-                print(f"   ✓ Got LLM insight ({len(answer_text)} chars)")
-
-            return search_results
-
-        except Exception as e:
-            print(f"   ✗ LLM Search failed: {str(e)}")
-            return []
-
-    def search_with_context(self, query: str, context: str = "", max_results: int = 10) -> List[SearchResult]:
-        """
-        Search with additional context for better results
-        """
-        if context:
-            query = f"{query}\n\nContext: {context}"
-
-        return self.search(query, max_results)
-
-    def search_news(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        """Search news using LLM"""
-        # Add news context to query
-        news_query = f"{query} latest news 2026"
-        return self.search(news_query, max_results)
-
-
-# Keep DuckDuckGo searcher for fallback
 class DuckDuckGoSearcher:
     """
     DuckDuckGo search implementation using ddgs package
@@ -140,69 +63,6 @@ class DuckDuckGoSearcher:
             return DDGS()
         except Exception:
             return None
-
-    def search(self, query: str, max_results: int = 5) -> List[SearchResult]:
-        """
-        Perform DuckDuckGo search with retry logic and fresh client
-        """
-        import random
-
-        print(f"🔍 Searching DuckDuckGo: '{query}'")
-
-        ddgs = self._get_ddgs()
-        if not ddgs:
-            print("   ✗ DuckDuckGo not available")
-            return self._search_bing(query, max_results)
-
-        max_retries = 2
-        for attempt in range(max_retries + 1):
-            try:
-                # Using the new ddgs package
-                results = list(ddgs.text(
-                    query,
-                    max_results=max_results,
-                    region='in-en'
-                ))
-
-                search_results = []
-                if results:
-                    for rank, result in enumerate(results, 1):
-                        url = result.get('href', result.get('url', ''))
-                        title = result.get('title', '')
-                        snippet = result.get('body', result.get('description', ''))
-
-                        if url and title:
-                            search_results.append(SearchResult(
-                                url=url, title=title, snippet=snippet,
-                                source="duckduckgo", rank=rank
-                            ))
-
-                if search_results:
-                    print(f"   ✓ Found {len(search_results)} results")
-                    return search_results
-
-                # If no results but no exception, might be zero results query
-                break
-
-            except Exception as e:
-                error_str = str(e).lower()
-                is_rate_limit = "403" in error_str or "202" in error_str or "ratelimit" in error_str
-
-                if is_rate_limit and attempt < max_retries:
-                    # If we already had an exception in a previous call (sticky error), don't retry
-                    if "exception occurred" in error_str:
-                        print("   [!] DuckDuckGo sticky error detected, skipping retries...")
-                        break
-                    delay = 0.5 + (random.random() * 1.0)
-                    print(f"   [-] Rate limited, retrying in {delay:.1f}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(delay)
-                    continue
-
-                print(f"   [x] DuckDuckGo search failed: {error_str}")
-                break
-
-        print(f"   [!] Falling back to Bing Search...")
-        return self._search_bing(query, max_results)
 
     def search(self, query: str, max_results: int = 5) -> List[SearchResult]:
         """Search the exact query across multiple no-key providers."""
@@ -454,41 +314,6 @@ class DuckDuckGoSearcher:
             print(f"   ✗ Bing fallback failed: {ex}")
         return search_results
 
-
-    def search_news(self, query: str, max_results: int = 5) -> List[SearchResult]:
-        """Search news specifically"""
-        try:
-            results = list(self.ddgs.news(
-                query,
-                max_results=max_results,
-                region='in-en'
-            ))
-
-            search_results = []
-            for rank, result in enumerate(results, 1):
-                search_results.append(SearchResult(
-                    url=result.get('url', ''),
-                    title=result.get('title', ''),
-                    snippet=result.get('body', ''),
-                    source="duckduckgo-news",
-                    rank=rank
-                ))
-
-            print(f"   ✓ Found {len(search_results)} news results")
-            return search_results
-
-        except Exception as e:
-            print(f"   ✗ News search failed: {e}")
-            return []
-
-    def search_with_location(self, query: str, location: str, max_results: int = 5) -> List[SearchResult]:
-        """Search with location context"""
-        enhanced_query = f"{query} {location}"
-        return self.search(enhanced_query, max_results)
-
-    def get_search_hash(self, query: str) -> str:
-        """Generate unique hash for caching"""
-        return hashlib.md5(query.encode()).hexdigest()
 
 
 class EnhancedSearcher:
